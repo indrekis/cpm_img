@@ -414,60 +414,6 @@ extern "C" {
 		cpmglob(0, 1, arch->star, &arch->root, &arch->gargc, &arch->gargv);
 
 		return arch.release(); // Returns raw ptr and releases ownership 
-
-#if 0
-		size_t image_file_size = get_file_size(ArchiveData->ArcName);
-		auto hArchFile = open_file_shared_read(ArchiveData->ArcName);
-		if (hArchFile == file_open_error_v)
-		{
-			ArchiveData->OpenResult = E_EOPEN;
-			return nullptr;
-		}
-		try {
-			arch = std::make_unique<whole_disk_t>( ArchiveData->ArcName, image_file_size,
-				hArchFile, ArchiveData->OpenMode);
-		}
-		catch (std::bad_alloc&) {
-			ArchiveData->OpenResult = E_NO_MEMORY;
-			return nullptr;
-		}
-
-		auto err_code = arch->process_volumes();
-
-		int loaded_FATs = 0;
-		size_t loaded_catalogs = 0;
-		if (err_code == 0) {
-			for (size_t i = 0; i < arch->disks.size(); ++i) {
-				if (!arch->disks[i].is_known_FS_type())
-					continue;
-				err_code = arch->disks[i].load_FAT();
-				if (err_code != 0 && loaded_FATs == 0) { // Saving the first error
-					ArchiveData->OpenResult = err_code;
-				}
-				else {
-					++loaded_FATs; //-V127
-					err_code = arch->disks[i].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
-					if (err_code != 0 && loaded_catalogs == 0) { // Saving the first error
-						ArchiveData->OpenResult = err_code;
-					}
-					else {
-						++loaded_catalogs;
-					}
-				}
-			}
-		}
-
-		plugin_config.log_print("Info# Loaded FATs %d, of them -- catalogs: %zd", loaded_FATs, loaded_catalogs);
-
-		if (loaded_catalogs > 0) {
-			ArchiveData->OpenResult = 0; // OK
-			return arch.release(); // Returns raw ptr and releases ownership 
-		}
-		else {
-			ArchiveData->OpenResult = err_code; 
-			return nullptr;
-		}
-#endif
 	}
 
 	// TCmd calls ReadHeader to find out what files are in the archive
@@ -478,7 +424,14 @@ extern "C" {
 			auto root_ino = &hArcData->root;
 			cpmInode file_ino;
 			auto dirent_raw_ptr = hArcData->gargv[hArcData->curren_file_counter];
-			auto dirent_ptr = reinterpret_cast<cpmDirent*>(dirent_raw_ptr);
+
+			if (strcmp(dirent_raw_ptr, "..") == 0) { // Skip
+				++hArcData->curren_file_counter;
+				if( hArcData->curren_file_counter < hArcData->gargc )
+					dirent_raw_ptr = hArcData->gargv[hArcData->curren_file_counter];
+				else 
+					return E_END_ARCHIVE;
+			}
 
 			cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
 
@@ -486,7 +439,8 @@ extern "C" {
 			strcpy(HeaderData->FileName, dirent_raw_ptr);
 
 			HeaderData->FileAttr = file_ino.attr;
-			HeaderData->FileTime = file_ino.atime;
+			// TODO: check and fix time
+			HeaderData->FileTime = file_ino.mtime;
 			HeaderData->PackSize = file_ino.size; // (statbuf.size+127)/128
 			HeaderData->UnpSize = HeaderData->PackSize;
 			HeaderData->CmtBuf = 0;
