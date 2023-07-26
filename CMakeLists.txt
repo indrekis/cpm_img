@@ -29,7 +29,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 add_library(cpmfs STATIC cpmtools/device_libdsk.c cpmtools/cpmfs.c )
 
-set(SOURCE_FILES FAT_definitions.cpp  FAT_definitions.h  cpmimg_wcx.cpp  minimal_fixed_string.h  resource.h  sysio_winapi.cpp  sysio_winapi.h wcxhead.h main_resources.rc
+set(SOURCE_FILES cpmimg_wcx.cpp  minimal_fixed_string.h  resource.h  sysio_winapi.cpp  sysio_winapi.h wcxhead.h main_resources.rc
 string_tools.cpp string_tools.h plugin_config.cpp plugin_config.h 
 	)
 
