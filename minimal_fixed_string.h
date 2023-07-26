@@ -17,6 +17,11 @@ public:
 	minimal_fixed_string_t(const char* str) {
 		push_back(str);
 	}
+	minimal_fixed_string_t(const char* str, size_t sz) {
+		for(size_t i = 0; i<sz && str[i]; ++i)
+			push_back(str[i]);
+	}
+
 	constexpr size_t size() const { return size_m; }
 	constexpr size_t capacity() const { return data_m.size() - 1; }
 	constexpr bool is_empty() const { return size_m == 0; }

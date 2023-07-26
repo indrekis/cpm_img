@@ -417,6 +417,13 @@ extern "C" {
 		}
 
 		cpmglob(0, 1, arch->star, &arch->root, &arch->gargc, &arch->gargv);
+		for (int i = 0; i < arch->gargc; ++i) {
+			if ( arch->gargv[i][0] != '.' && 
+				(arch->gargv[i][0] != '0' || arch->gargv[i][1] != '0') 
+			   ) {
+				++arch->users_counter;
+			}
+		}
 
 		return arch.release(); // Returns raw ptr and releases ownership 
 	}
@@ -441,8 +448,18 @@ extern "C" {
 			cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
 
 			strcpy(HeaderData->ArcName, hArcData->archname.data());
-			strcpy(HeaderData->FileName, dirent_raw_ptr);
 
+			if (hArcData->users_counter == 0)
+			{
+				
+				strcpy(HeaderData->FileName, dirent_raw_ptr + 2);
+			}
+			else {
+				minimal_fixed_string_t<MAX_PATH> ts{dirent_raw_ptr, 2};
+				ts.push_back("\\");
+				ts.push_back(dirent_raw_ptr + 2);
+				strcpy(HeaderData->FileName, ts.data());
+			}
 			HeaderData->FileAttr = hArcData->cpm_attr_to_tcmd_attr(file_ino.attr);
 			// TODO: check and fix time
 			HeaderData->FileTime = file_ino.mtime;
