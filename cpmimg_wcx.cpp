@@ -32,7 +32,6 @@
 
 #include "sysio_winapi.h"
 #include "minimal_fixed_string.h"
-#include "FAT_definitions.h"
 #include "plugin_config.h"
 
 #include "wcxhead.h"
@@ -83,7 +82,8 @@ BOOL APIENTRY DllMain(HANDLE hModule,
 	return TRUE;
 }
 
-bool set_file_attributes_ex(const char* filename, FAT_attrib_t attribute) {
+bool set_file_attributes_ex(const char* filename, uint32_t attribute) {
+	// TODO: Fix
 	/*
 	DWORD winattr = FILE_ATTRIBUTE_NORMAL;
 	if (attribute.is_readonly()) winattr |= FILE_ATTRIBUTE_READONLY;
@@ -91,17 +91,8 @@ bool set_file_attributes_ex(const char* filename, FAT_attrib_t attribute) {
 	if (attribute.is_hidden()  ) winattr |= FILE_ATTRIBUTE_HIDDEN;
 	if (attribute.is_system()  ) winattr |= FILE_ATTRIBUTE_SYSTEM;
 	*/
-	return set_file_attributes(filename, attribute.get_user_attr()); // Codes are equal
+	return set_file_attributes(filename, attribute); // Codes are equal
 }
-
-struct arc_dir_entry_t
-{
-	minimal_fixed_string_t<MAX_PATH> PathName;
-	size_t FileSize    = 0;
-	uint32_t FileTime  = 0;
-	FAT_attrib_t FileAttr{};
-	uint32_t FirstClus = 0;
-};
 
 plugin_config_t plugin_config; 
 
@@ -492,7 +483,7 @@ extern "C" {
 			cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
 
 			strcpy(HeaderData->ArcName, hArcData->archname.data());
-			strcpy(HeaderData->FileName, dirent_ptr->name);
+			strcpy(HeaderData->FileName, dirent_raw_ptr);
 
 			HeaderData->FileAttr = file_ino.attr;
 			HeaderData->FileTime = file_ino.atime;
