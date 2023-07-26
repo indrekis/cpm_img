@@ -145,6 +145,18 @@ struct whole_disk_t {
 		return res; 
 	}
 
+	//! TODO: How to support F1-F4 attributes
+	static int cpm_attr_to_tcmd_attr(cpm_attr_t attr) {
+		int res = 0;
+		if (attr & CPM_ATTR_RO)
+			res |= 0x01;
+		if (attr & CPM_ATTR_SYS)
+			res |= 0x04;
+		if (attr & CPM_ATTR_ARCV)
+			res |= 0x20;
+		return res;
+	}
+
 	~whole_disk_t() {
 		if (gargv) {
 			cpmglobfree(gargv, gargc);
@@ -438,7 +450,7 @@ extern "C" {
 			strcpy(HeaderData->ArcName, hArcData->archname.data());
 			strcpy(HeaderData->FileName, dirent_raw_ptr);
 
-			HeaderData->FileAttr = file_ino.attr;
+			HeaderData->FileAttr = hArcData->cpm_attr_to_tcmd_attr(file_ino.attr);
 			// TODO: check and fix time
 			HeaderData->FileTime = file_ino.mtime;
 			HeaderData->PackSize = file_ino.size; // (statbuf.size+127)/128
