@@ -1,16 +1,9 @@
 // This is a personal academic project. Dear PVS-Studio, please check it.
 // PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 /*
-* Floppy disk images unpack plugin for the Total Commander.
-* Copyright (c) 2002, IvGzury ( ivgzury@hotmail.com )
-* Copyright (c) 2022, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
+* CP/M floppy disk images plugin for the Total Commander.
+* Copyright (c) 2022-2023, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
 *
-* Oleg Farenyuk's code is released under the MIT License.
-* 
-* Original IvGzury copyright message:
-* This program is absolutely free software.
-* If you have any remarks or problems, please don't
-* hesitate to send me an email.
 */
 
 
@@ -404,8 +397,8 @@ extern "C" {
 			return nullptr;
 		}
 
-		arch->driver_name = "imd"; //TODO: fix!
-		const char* errs = Device_open(&(arch->super.dev), ArchiveData->ArcName, O_RDONLY, arch->driver_name.c_str());
+		const char* errs = Device_open(&(arch->super.dev), ArchiveData->ArcName, O_RDONLY,
+			arch->driver_name.empty() ? nullptr : arch->driver_name.c_str());
 
 		if (errs) // Pointer to error string 
 		{
@@ -466,6 +459,7 @@ extern "C" {
 			return 0;
 		}
 		
+		hArcData->curren_file_counter = 0;
 		return E_END_ARCHIVE;
 	}
 
@@ -476,8 +470,11 @@ extern "C" {
 		file_handle_t hUnpFile;
 
 		if (Operation == PK_SKIP) return 0;
-#if 0
-		if (hArcData->disks[hArcData->disc_counter].counter == 0)
+
+		if (hArcData->curren_file_counter > hArcData->gargc)
+			return E_NO_MEMORY; // Logic error
+
+		if ( hArcData->curren_file_counter == 0 )
 			return E_END_ARCHIVE;
 		// if (newentry->FileAttr & ATTR_DIRECTORY) return 0;
 
@@ -492,6 +489,15 @@ extern "C" {
 			if (DestName) strcat(dest, DestName);
 		}
 
+		struct cpmFile file;
+		auto root_ino = &hArcData->root;
+		cpmInode file_ino;
+		auto dirent_raw_ptr = hArcData->gargv[hArcData->curren_file_counter - 1];
+		cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
+
+		std::unique_ptr<char[]> buf{ new char[file_ino.size] };
+		cpmOpen(&file_ino, &file, O_RDONLY);
+		auto rres = cpmRead(&file, buf.get(), file_ino.size);
 		if (Operation == PK_TEST) {
 			hUnpFile = open_file_overwrite(dest);
 		}
@@ -500,22 +506,16 @@ extern "C" {
 		}
 		if (hUnpFile == file_open_error_v)
 			return E_ECREATE;
+		write_file(hUnpFile, buf.get(), file_ino.size);
 
-		auto res = hArcData->disks[hArcData->disc_counter].extract_to_file(hUnpFile, 
-			hArcData->disks[hArcData->disc_counter].counter - 1);
-		if (res != 0) {
-			return res;
-		}
-		const auto& cur_entry = hArcData->disks[hArcData->disc_counter].
-			arc_dir_entries[hArcData->disks[hArcData->disc_counter].counter - 1];
-		set_file_datetime(hUnpFile, cur_entry.FileTime);
+		if(file_ino.mtime != 0 )
+			set_file_datetime(hUnpFile, file_ino.mtime); // TODO: Check and fix
 		close_file(hUnpFile);
-		set_file_attributes_ex(dest, cur_entry.FileAttr);
+		set_file_attributes_ex(dest, hArcData->cpm_attr_to_tcmd_attr(file_ino.attr) );
 
 		if (Operation == PK_TEST) {
 			delete_file(dest);
 		}
-#endif 
 		return 0;
 	}
 
