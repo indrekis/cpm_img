@@ -457,6 +457,7 @@ dsk_err_t imd_open(DSK_DRIVER *self, const char *filename)
 		err = imd_load_track(imdself, count, fp);
 		if (err == DSK_ERR_OVERRUN) 	/* EOF */
 		{
+			fclose(fp);
 			dsk_report_end();
 			return DSK_ERR_OK;
 		}
@@ -467,12 +468,14 @@ dsk_err_t imd_open(DSK_DRIVER *self, const char *filename)
 			{
 				imd_free_track(imdself->imd_tracks[n]);
 			}
+			fclose(fp);
 			dsk_report_end();
 			return err;
 		}
 		++count;
 	} 
 	/* Should never get here! */
+	fclose(fp);
 	dsk_report_end();
 	return DSK_ERR_OK;
 }
