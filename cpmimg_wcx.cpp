@@ -121,23 +121,6 @@ struct whole_disk_t {
 
 	uint32_t users_counter = 0;
 
-
-	static minimal_fixed_string_t<MAX_PATH> get_disk_prefix(uint32_t idx) { 
-		minimal_fixed_string_t<MAX_PATH> res{ "C\\" };
-		if (idx > 'Z' - 'C') { // Quick and dirty
-			res[1] = 'P';
-			while (idx != 0) {
-				res.push_back( static_cast<char>(idx % 10 + '0') );
-				idx /= 10;
-			}
-			res.push_back('\\');
-		}
-		else {
-			res[0] += idx;
-		}
-		return res; 
-	}
-
 	//! TODO: How to support F1-F4 attributes
 	static int cpm_attr_to_tcmd_attr(cpm_attr_t attr) {
 		int res = 0;
@@ -155,6 +138,7 @@ struct whole_disk_t {
 			cpmglobfree(gargv, gargc);
 			// TODO: fix call of cpmUmount
 			cpmUmount(&super);
+//			Device_close(&super.dev);
 		}
 		if (hArchFile)
 			close_file(hArchFile);
@@ -573,15 +557,43 @@ extern "C" {
 	}
 #endif 
 	DLLEXPORT int STDCALL CanYouHandleThisFile(char* FileName) { // BOOL == int 
-		size_t image_file_size = get_file_size(FileName);
 		auto hArchFile = open_file_shared_read(FileName);
 		if (hArchFile == file_open_error_v)
 		{
 			return 0;
+		} else {
+			close_file(hArchFile);
 		}
 
-		return 1;
 		// Caching results here would complicate code too much as for now
+		cpmSuperBlock super;
+		cpmInode root;
+		//! TODO: Read from config
+		std::string format{FORMAT}; //  osb1sssd, osbexec1
+		// struct cpmInode root;
+		std::string driver_name{}; // devopts; example: driver_name=="imd", "tele" etc.
+		//! TODO: parse extension and use it as a possible driver name.
+		bool use_uppercase = true;
+
+		const char* errs = Device_open(&(super.dev), FileName, O_RDONLY,
+			driver_name.empty() ? nullptr : driver_name.c_str());
+
+		if (errs) // Pointer to error string 
+		{
+			plugin_config.log_print("\n\nError# Failed opening file: %s in CanYouHandleThisFile\n", errs);
+			return 0;
+		}
+		int erri = cpmReadSuper(&super, &root,
+			format.empty() ? nullptr : format.c_str(),
+			use_uppercase);
+		if (erri == -1)
+		{
+			plugin_config.log_print("\n\nError# Failed reading superblock of %s in CanYouHandleThisFile.", FileName);
+			return 0;
+		}
+		cpmUmount(&super);
+
+		return 1;
 //		whole_disk_t arch{ FileName, image_file_size,
 	//			hArchFile, PK_OM_LIST };
 
