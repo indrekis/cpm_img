@@ -460,15 +460,139 @@ extern "C" {
 	}
 
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
-		return 0;
 		// PK_PACK_MOVE_FILES         1 Delete original after packing
 		// PK_PACK_SAVE_PATHS         2 Save path names of files
 		// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
+		cpmSuperBlock super;
+		cpmInode root;
+		//! TODO: Read from config
+		std::string format{FORMAT}; //  osb1sssd, osbexec1
+		// struct cpmInode root;
+		std::string driver_name{}; // devopts; example: driver_name=="imd", "tele" etc.
+		//! TODO: parse extension and use it as a possible driver name.
+		bool use_uppercase = true;
+
+		std::string SubPathS{SubPath ? SubPath : ""};
+		if (!SubPathS.empty() && SubPathS.size() != 2) {
+			// Impossible path
+			plugin_config.log_print("\n\nError# Impossible in-image path: %s for %s archive in PackFiles\n", 
+				SubPath, PackedFile);
+			return E_EOPEN;
+		}
+
+		std::string SrcPathS{SrcPath ? SrcPath : ""};
+
+		const char* errs = Device_open(&(super.dev), PackedFile, O_RDONLY,
+			driver_name.empty() ? nullptr : driver_name.c_str());
+
+		if (errs) // Pointer to error string 
+		{
+			plugin_config.log_print("\n\nError# Failed opening file: %s in DeleteFiles\n", errs);
+			return E_EOPEN;
+		}
+		int erri = cpmReadSuper(&super, &root,
+			format.empty() ? nullptr : format.c_str(),
+			use_uppercase);
+		if (erri == -1)
+		{
+			plugin_config.log_print("\n\nError# Failed reading superblock of %s in DeleteFiles.", PackedFile);
+			return E_EOPEN;
+		}
+
+		std::vector<const char*> file_list;
+		const char* cur_ptr = AddList;
+		size_t sl = strlen(cur_ptr);
+		while (true) {
+			// Erase
+			sl = strlen(cur_ptr);
+			if (sl == 0)
+				break;
+			std::string ps{cur_ptr};
+			auto user_pos = ps.find('\\');
+			if ( user_pos == ps.size() - 1 ) {
+				cur_ptr += sl + 1;
+				continue; // We do not creat folders by themself 
+			}
+			if (user_pos == 2 && SubPathS.empty() ) {
+				ps.erase(2, 1);
+			}
+			else if (user_pos == std::string::npos) {
+				if(SubPathS.empty())
+					ps = "00" + ps;
+				else 
+					ps = SubPathS + ps;
+			}
+			else {
+				plugin_config.log_print("\n\nError# Wrong file name %s for archive %s in DeleteFiles.",
+					cur_ptr, PackedFile);
+			}
+			// TODO: Process text files?
+			auto src_file_path = SrcPathS + cur_ptr; // cur_ptr -- original name
+			auto filehdr = open_file_shared_read(src_file_path.c_str());
+			if (filehdr == file_open_error_v)
+			{
+				plugin_config.log_print("\n\nError# Failed opening file %s", src_file_path.c_str());
+				return E_EOPEN;
+			}
+			
+			auto file_size = get_file_size(filehdr);
+			
+			char* buf = new char[ file_size+128 ];
+
+			auto read_size = read_file(filehdr, buf, file_size);
+			// TODO: check errors in read_file
+			// TODO: check correctness 
+			// The end of an ASCII file is denoted by a CTRL-Z character (1AH) 
+			// or a real end-of-file returned by the CP/M read operation. 
+			// CTRL-Z characters embedded within machine code files (for example, 
+			// COM files) are ignored and the end-of-file condition returned 
+			// by CP/M is used to terminate read operations.
+			// http://www.gaby.de/cpm/manuals/archive/cpm22htm/ch5.htm
+			if (file_size % 128 != 0) {
+				auto cur_idx = file_size;
+				buf[cur_idx++] = 0x1A;
+				while (cur_idx % 128) {
+					buf[cur_idx++] = 0x1A;
+				}
+			}
+
+			struct cpmFile file;
+			struct cpmInode ino;
+			if (cpmCreat(&root, ps.c_str(), &ino, 0666) == -1)
+			{
+				plugin_config.log_print("\n\nError# Failed creating file %s in archive %s with error: %s.",
+					ps.c_str(), PackedFile, boo);
+			}
+
+			cpmOpen(&ino, &file, O_WRONLY);
+
+			auto written_size = cpmWrite(&file, buf, ((file_size + 127)/128)*128);
+
+			if (cpmClose(&file) != 0)
+			{
+				plugin_config.log_print("\n\nError# Failed closing file %s in archive %s with error: %s.",
+					ps.c_str(), PackedFile, boo);
+			}
+
+			delete[] buf;
+			close_file(filehdr);
+			
+
+			if (false)
+			{
+				plugin_config.log_print("\n\nError# Failed deleting file %s in archive %s with error: %s.",
+					ps.c_str(), PackedFile, boo); // »ииии! ќбробка помилок...
+				return E_NOT_SUPPORTED;
+			}
+			cur_ptr += sl + 1;
+		}
+		cpmUmount(&super);
+		return 0;
 	}
 
 	DLLEXPORT int STDCALL GetPackerCaps() {
-		return PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_DELETE;
-		// PK_CAPS_DELETE // PK_CAPS_MODIFY //PK_CAPS_ENCRYPT
+		return PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_DELETE | PK_CAPS_MODIFY | PK_CAPS_NEW | PK_CAPS_MULTIPLE;
+		// PK_CAPS_DELETE // PK_CAPS_MODIFY //PK_CAPS_ENCRYPT // PK_CAPS_NEW 
 	}
 }
 
