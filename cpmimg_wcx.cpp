@@ -66,12 +66,15 @@ using std::nothrow, std::uint8_t;
 // For cpmfs.c
 char const cmd[] = "cpmimg_wcx";
 
+plugin_config_t plugin_config;
 
 // The DLL entry point
 BOOL APIENTRY DllMain(HANDLE hModule,
 	DWORD  ul_reason_for_call,
 	LPVOID lpReserved
 ) {
+	// For some reason is called many-many times. 
+	auto rdconf = plugin_config.read_conf(nullptr, true);
 	return TRUE;
 }
 
@@ -86,8 +89,6 @@ bool set_file_attributes_ex(const char* filename, uint32_t attribute) {
 	*/
 	return set_file_attributes(filename, attribute); // Codes are equal
 }
-
-plugin_config_t plugin_config; 
 
 struct whole_disk_t {
 	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
@@ -354,8 +355,8 @@ extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
-		plugin_config.log_print("\n\nInfo# Opening file: %s", ArchiveData->ArcName);
 		auto rdconf = plugin_config.read_conf(nullptr, true); // Reread confuguration
+		plugin_config.log_print("\n\nInfo# Opening file: %s", ArchiveData->ArcName);
 
 		std::unique_ptr<whole_disk_t> arch; // TCmd API expects HANDLE/raw pointer,
 										// so smart pointer is used to manage cleanup on errors 
@@ -524,19 +525,22 @@ extern "C" {
 	DLLEXPORT int STDCALL CloseArchive(archive_HANDLE hArcData)
 	{
 		delete hArcData;
+		hArcData = nullptr;
 		return 0; // OK
 	}
 
 	// This function allows you to notify user about changing a volume when packing files
 	DLLEXPORT void STDCALL SetChangeVolProc(archive_HANDLE hArcData, tChangeVolProc pChangeVolProc)
 	{
-		hArcData->pLocChangeVol = pChangeVolProc;
+		if( hArcData != reinterpret_cast<archive_HANDLE>(static_cast<size_t>(-1)) )
+			hArcData->pLocChangeVol = pChangeVolProc;
 	}
 
 	// This function allows you to notify user about the progress when you un/pack files
 	DLLEXPORT void STDCALL SetProcessDataProc(archive_HANDLE hArcData, tProcessDataProc pProcessDataProc)
 	{
-		hArcData->pLocProcessData = pProcessDataProc;
+		if ( hArcData != reinterpret_cast<archive_HANDLE>( static_cast<size_t>(- 1)) )
+			hArcData->pLocProcessData = pProcessDataProc;
 	}
 
 	// PackSetDefaultParams is called immediately after loading the DLL, before any other function. 
@@ -593,17 +597,78 @@ extern "C" {
 		}
 		cpmUmount(&super);
 
-		return 1;
-//		whole_disk_t arch{ FileName, image_file_size,
-	//			hArchFile, PK_OM_LIST };
+		return 1; 
+	}
 
-//		auto err_code = arch.process_volumes();
-//		int is_OK = (err_code != 0);
-//		return is_OK;
+	DLLEXPORT int STDCALL DeleteFiles(char* PackedFile, char* DeleteList) {
+		cpmSuperBlock super;
+		cpmInode root;
+		//! TODO: Read from config
+		std::string format{FORMAT}; //  osb1sssd, osbexec1
+		// struct cpmInode root;
+		std::string driver_name{}; // devopts; example: driver_name=="imd", "tele" etc.
+		//! TODO: parse extension and use it as a possible driver name.
+		bool use_uppercase = true;
+
+		const char* errs = Device_open(&(super.dev), PackedFile, O_RDONLY,
+			driver_name.empty() ? nullptr : driver_name.c_str());
+
+		if (errs) // Pointer to error string 
+		{
+			plugin_config.log_print("\n\nError# Failed opening file: %s in DeleteFiles\n", errs);
+			return E_EOPEN;
+		}
+		int erri = cpmReadSuper(&super, &root,
+			format.empty() ? nullptr : format.c_str(),
+			use_uppercase);
+		if (erri == -1)
+		{
+			plugin_config.log_print("\n\nError# Failed reading superblock of %s in DeleteFiles.", PackedFile);
+			return E_EOPEN;
+		}
+
+		std::vector<const char*> file_list;
+		const char* cur_ptr = DeleteList;
+		size_t sl = strlen(cur_ptr);
+		while( true ){
+			// Erase
+			sl = strlen(cur_ptr);
+			if (sl == 0)
+				break;
+			std::string ps{cur_ptr};
+			auto user_pos = ps.find('\\');
+			if (user_pos == 2) {
+				ps.erase(2, 1);
+			}
+			else if (user_pos == std::string::npos) {
+				ps = "00" + ps;
+			}
+			else {
+				plugin_config.log_print("\n\nError# Wrong file name %s for archive %s in DeleteFiles.", 
+					cur_ptr, PackedFile);
+			}
+			if (cpmUnlink(&root, ps.c_str()) == -1)
+			{
+				plugin_config.log_print("\n\nError# Failed deleting file %s in archive %s with error: %s.", 
+					ps.c_str(), PackedFile, boo); // »ииии! ќбробка помилок...
+				return E_NOT_SUPPORTED;
+			}
+			cur_ptr += sl + 1;
+		}
+		cpmUmount(&super);
+		return 0;
+	}
+
+	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
+		return 0;
+		// PK_PACK_MOVE_FILES         1 Delete original after packing
+		// PK_PACK_SAVE_PATHS         2 Save path names of files
+		// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
 	}
 
 	DLLEXPORT int STDCALL GetPackerCaps() {
-		return PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT;
+		return PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_DELETE;
+		// PK_CAPS_DELETE // PK_CAPS_MODIFY //PK_CAPS_ENCRYPT
 	}
 }
 
