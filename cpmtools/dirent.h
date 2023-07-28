@@ -5,6 +5,10 @@
  * This file is part of dirent.  Dirent may be freely distributed
  * under the MIT license.  For all details and documentation, see
  * https://github.com/tronkko/dirent
+ * 
+ * 2023, Oleg Farenyuk aka Indrekis:
+ * It is compatible with the GPLv3, used by the cpmtools and libdsk. 
+ * According to https://softwarefreedom.org/resources/2007/gpl-non-gpl-collaboration.html
  */
 #ifndef DIRENT_H
 #define DIRENT_H
