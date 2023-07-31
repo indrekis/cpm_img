@@ -52,6 +52,10 @@ target_link_libraries(cpmimg_wcx PRIVATE libdsk cpmfs)
 add_executable(cpmls cpmtools/cpmls.c  cpmtools/getopt.c)
 target_link_libraries(cpmls libdsk cpmfs)
 
+add_executable(mkfs.cpm cpmtools/mkfs.cpm.c  cpmtools/getopt.c)
+target_link_libraries(mkfs.cpm libdsk cpmfs)
+
+
 if( DEFINED FLTK_ENABLED_EXPERIMENTAL)
 find_package(FLTK CONFIG)
 

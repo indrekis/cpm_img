@@ -119,7 +119,7 @@ struct whole_disk_t {
 
 	cpmSuperBlock super;
 	cpmInode root;
-	std::string format{FORMAT}; //  osb1sssd, osbexec1
+	// std::string format{FORMAT}; //  osb1sssd, osbexec1
 	// struct cpmInode root;
 	std::string driver_name{}; // devopts; example: driver_name=="imd", "tele" etc.
 	bool use_uppercase = true;
@@ -252,7 +252,6 @@ private:
 using archive_HANDLE = whole_disk_t*;
 
 //------------------------------------------------------------
-// 
 //-----------------------=[ DLL exports ]=--------------------
 
 extern "C" {
@@ -525,6 +524,32 @@ extern "C" {
 			return E_EOPEN;
 		}
 
+		//! Creat file
+		//! TODO: add boot blocks support
+		if (access(PackedFile, F_OK) != 0) {
+			cpmSuperBlock super;
+			memset(&super, 0, sizeof(super));
+			cpmInode root;
+			// file doesn't exist
+			super.dev.opened = 0;
+			bool use_uppercase = true;
+			cpmReadSuper(&super, &root, plugin_config.image_format.data(),
+				use_uppercase);
+			size_t bootTrackSize = super.boottrk * super.secLength * super.sectrk;
+			char* bootTracks = new char(bootTrackSize);
+			// if ((bootTracks = malloc(bootTrackSize)) == (void*)0)
+			const char* label = "unlabeled";
+			bool use_timeStamps = false;
+			memset(bootTracks, 0xe5, bootTrackSize);
+			if (mkfs(&super, PackedFile, plugin_config.image_format.data(),
+				label, bootTracks, use_timeStamps, use_uppercase) == -1)
+			{
+				plugin_config.log_print("\n\nError# Failed creating file: %s in PackFiles with error: %s",
+					PackedFile, boo);
+				return E_ECREATE;
+			}
+		}
+		//! 
 		std::unique_ptr<whole_disk_t> loc_arch;
 
 		try {
@@ -602,6 +627,10 @@ extern "C" {
 
 			struct cpmFile file;
 			struct cpmInode ino;
+
+			//! TODO: Fix this hack 
+			auto temp_err = cpmUnlink(&loc_arch->root, ps.c_str());
+			
 			if (cpmCreat(&loc_arch->root, ps.c_str(), &ino, 0666) == -1)
 			{
 				plugin_config.log_print("\n\nError# Failed creating file %s in archive %s with error: %s.",

@@ -18,6 +18,10 @@ extern "C" {
 #endif
 // Source: https://github.com/tronkko/dirent
 #include "dirent.h"
+
+#include <io.h>
+#define F_OK 0
+#define access _access
 #endif 
 
 #include "device.h"
@@ -181,6 +185,9 @@ void cpmUtime(struct cpmInode *ino, struct utimbuf *times);
 int cpmSync(struct cpmSuperBlock *sb);
 int cpmUmount(struct cpmSuperBlock *sb);
 int cpmCheckDs(struct cpmSuperBlock *sb);
+
+int mkfs(struct cpmSuperBlock* drive, const char* name, const char* format, const char* label, 
+    char* bootTracks, int timeStamps, int uppercase);
 
 #ifdef __cplusplus
 }
