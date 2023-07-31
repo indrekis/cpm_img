@@ -49,6 +49,9 @@ endif()
 
 target_link_libraries(cpmimg_wcx libdsk cpmfs)
 
+add_executable(cpmls cpmtools/cpmls.c  cpmtools/getopt.c)
+target_link_libraries(cpmls libdsk cpmfs)
+
 if( DEFINED FLTK_ENABLED_EXPERIMENTAL)
 find_package(FLTK CONFIG)
 
