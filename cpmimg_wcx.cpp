@@ -1,4 +1,7 @@
 // This is a personal academic project. Dear PVS-Studio, please check it.
+// PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
+//
+// This is a personal academic project. Dear PVS-Studio, please check it.
 // PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 /*
 * CP/M floppy disk images plugin for the Total Commander.
@@ -213,9 +216,9 @@ private:
 
 				info_widget = choice;
 
-				Fl_Button* butOK = new Fl_Button(10, 150, 80, 30, "OK");
+				Fl_Button* butOK = new Fl_Button(10, 150, 80, 30, "OK");       
 				// butOK->when(0);
-				Fl_Button* butCn = new Fl_Button(100, 150, 80, 30, "Cancel");
+				Fl_Button* butCn = new Fl_Button(100, 150, 80, 30, "Cancel");  
 				butOK->callback((Fl_Callback*)(format_select_OK_callback), this);
 				butCn->callback((Fl_Callback*)(format_select_cancel_callback), this);
 
@@ -241,7 +244,7 @@ private:
 				else
 					break;
 
-			}
+			} //-V773
 #endif
 			if (erri == -1)
 				throw disk_err_t{ "Error in cpmReadSuper.", E_EOPEN };
@@ -379,7 +382,8 @@ extern "C" {
 		auto dirent_raw_ptr = hArcData->gargv[hArcData->curren_file_counter - 1];
 		cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
 
-		std::unique_ptr<char[]> buf{ new char[file_ino.size] };
+        auto buf = std::make_unique<char[]>(file_ino.size);
+		// std::unique_ptr<char[]> buf{ new char[file_ino.size] };
 		cpmOpen(&file_ino, &file, O_RDONLY);
 		auto rres = cpmRead(&file, buf.get(), file_ino.size);
 		if (Operation == PK_TEST) {
@@ -480,7 +484,7 @@ extern "C" {
 			return E_NO_MEMORY;
 		}
 
-		std::vector<const char*> file_list;
+		// std::vector<const char*> file_list;
 		const char* cur_ptr = DeleteList;
 		size_t sl = strlen(cur_ptr);
 		while( true ){
@@ -536,8 +540,8 @@ extern "C" {
 			cpmReadSuper(&super, &root, plugin_config.image_format.data(),
 				use_uppercase);
 			size_t bootTrackSize = super.boottrk * super.secLength * super.sectrk;
-			char* bootTracks = new char(bootTrackSize);
-			// if ((bootTracks = malloc(bootTrackSize)) == (void*)0)
+			char* bootTracks = new char[bootTrackSize];
+			// if ((bootTracks = malloc[bootTrackSize]) == (void*)0)
 			const char* label = "unlabeled";
 			bool use_timeStamps = false;
 			memset(bootTracks, 0xe5, bootTrackSize);
@@ -568,7 +572,7 @@ extern "C" {
 
 		std::string SrcPathS{SrcPath ? SrcPath : ""};
 
-		std::vector<const char*> file_list;
+		// std::vector<const char*> file_list;
 		const char* cur_ptr = AddList;
 		size_t sl = strlen(cur_ptr);
 		while (true) {
@@ -699,7 +703,7 @@ extern "C" {
 			delete conf_widget;
 			conf_widget = nullptr;
 #endif
-	}
+	} //-V773
 
 	DLLEXPORT int STDCALL GetPackerCaps() {
 		return PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_DELETE | 
