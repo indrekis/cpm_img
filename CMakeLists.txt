@@ -47,7 +47,7 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 	set_target_properties(cpmimg_wcx PROPERTIES SUFFIX .wcx PREFIX "") 	
 endif()
 
-target_link_libraries(cpmimg_wcx libdsk cpmfs)
+target_link_libraries(cpmimg_wcx PRIVATE libdsk cpmfs) 
 
 add_executable(cpmls cpmtools/cpmls.c  cpmtools/getopt.c)
 target_link_libraries(cpmls libdsk cpmfs)

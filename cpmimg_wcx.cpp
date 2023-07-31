@@ -45,6 +45,9 @@
 #include <FL/Fl_Window.H>
 #include <FL/Fl_Box.H>
 #include <FL/fl_ask.H>
+#include <FL/Fl_Button.H>
+#include <FL/Fl_Choice.H>
+#include <FL/Fl_Double_Window.H>
 #endif
 
 using std::nothrow, std::uint8_t;
@@ -127,6 +130,13 @@ struct whole_disk_t {
 	char** gargv = nullptr;
 	int gargc;
 
+#ifdef FLTK_ENABLED_EXPERIMENTAL
+	// GUI 
+	Fl_Double_Window* win = nullptr;
+	void* info_widget = nullptr;
+	bool ui_retry = false;
+#endif
+
 	uint32_t curren_file_counter = 0;
 
 	whole_disk_t(const char* archname_in, size_t vol_size, int openmode, bool read_only_in):
@@ -147,6 +157,20 @@ struct whole_disk_t {
 		cpmUmount(&super);
 	}
 private: 
+#ifdef FLTK_ENABLED_EXPERIMENTAL
+	static void format_select_OK_callback(Fl_Button* obj, void* arg) {
+		auto disk = static_cast<whole_disk_t*>(arg);
+		Fl_Choice* choice = static_cast<Fl_Choice*>(disk->info_widget);
+		plugin_config.image_format = choice->text();
+		disk->win->hide();
+		disk->ui_retry = true;
+	}
+	static void format_select_cancel_callback(Fl_Button* obj, void* arg) {
+		auto disk = static_cast<whole_disk_t*>(arg);
+		disk->win->hide();
+		disk->ui_retry = false;
+	}
+#endif
 	void process_image(bool read_only) {
 		hArchFile = open_file_shared_read(archname.data());
 		if (hArchFile == file_open_error_v)
@@ -173,13 +197,62 @@ private:
 		if (erri == -1)
 		{
 			plugin_config.log_print("\n\nError# Failed reading superblock.");
-			throw disk_err_t{ "Error in cpmReadSuper.", E_EOPEN };
+#ifdef FLTK_ENABLED_EXPERIMENTAL
+			while (true) {
+				Fl_Choice* choice;
+				win = new Fl_Double_Window(400, 200, "Choose image format");
+				win->begin();
+
+				// Good, assigns to the global `choice`, so it won't be NULL when but_cb is called
+				choice = new Fl_Choice(70, 10, 200, 50, "Format");
+
+				choice->add("osb1sssd");
+				choice->add("osbexec1");
+				choice->add("osbVix");
+				choice->value(0);
+
+				info_widget = choice;
+
+				Fl_Button* butOK = new Fl_Button(10, 150, 80, 30, "OK");
+				// butOK->when(0);
+				Fl_Button* butCn = new Fl_Button(100, 150, 80, 30, "Cancel");
+				butOK->callback((Fl_Callback*)(format_select_OK_callback), this);
+				butCn->callback((Fl_Callback*)(format_select_cancel_callback), this);
+
+				win->show();
+				Fl::run();
+				// auto is_OK_Pressed = butOK->changed();
+				// auto res = fl_choice("Wrong boot signature: %04x", "Stop", "OK", "Try MBR", bootsec.signature);
+				// fl_alert("OK pressed");
+				
+				delete win;
+				win = nullptr;
+
+				if (!ui_retry)
+					break;
+
+				erri = cpmReadSuper(&super, &root,
+					plugin_config.image_format.empty() ? nullptr : plugin_config.image_format.data(),
+					use_uppercase);
+				if (erri == -1)
+				{
+					plugin_config.log_print("\n\nError# Failed reading superblock.");
+				}
+				else
+					break;
+
+			}
+#endif
+			if (erri == -1)
+				throw disk_err_t{ "Error in cpmReadSuper.", E_EOPEN };
 		}
 	}
 };
 //------- whole_disk_t implementation --------------------------
 using archive_HANDLE = whole_disk_t*;
 
+//------------------------------------------------------------
+// 
 //-----------------------=[ DLL exports ]=--------------------
 
 extern "C" {
@@ -560,8 +633,48 @@ extern "C" {
 		return 0;
 	}
 
+#ifdef FLTK_ENABLED_EXPERIMENTAL
+	static Fl_Choice* info_widget = nullptr;
+	static Fl_Double_Window* conf_widget = nullptr;
+	static void format_select_OK_callback(Fl_Button* obj) {
+		plugin_config.image_format = info_widget->text();
+		conf_widget->hide();
+	}
+	static void format_select_cancel_callback(Fl_Button* obj) {
+		conf_widget->hide();
+	}
+#endif
+
+	DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
+#ifdef FLTK_ENABLED_EXPERIMENTAL
+			conf_widget = new Fl_Double_Window(400, 200, "Choose image format");
+			conf_widget->begin();
+
+			// Good, assigns to the global `choice`, so it won't be NULL when but_cb is called
+			info_widget = new Fl_Choice(70, 10, 200, 50, "Format");
+
+			info_widget->add("osb1sssd");
+			info_widget->add("osbexec1");
+			info_widget->add("osbVix");
+			info_widget->value(0);
+
+			Fl_Button* butOK = new Fl_Button(10, 150, 80, 30, "OK");
+			// butOK->when(0);
+			Fl_Button* butCn = new Fl_Button(100, 150, 80, 30, "Cancel");
+			butOK->callback((Fl_Callback*)(format_select_OK_callback));
+			butCn->callback((Fl_Callback*)(format_select_cancel_callback));
+
+			conf_widget->show();
+			Fl::run();
+
+			delete conf_widget;
+			conf_widget = nullptr;
+#endif
+	}
+
 	DLLEXPORT int STDCALL GetPackerCaps() {
-		return PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_DELETE | PK_CAPS_MODIFY | PK_CAPS_NEW | PK_CAPS_MULTIPLE;
+		return PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_DELETE | 
+			   PK_CAPS_MODIFY | PK_CAPS_NEW | PK_CAPS_MULTIPLE | PK_CAPS_OPTIONS;
 		// PK_CAPS_DELETE // PK_CAPS_MODIFY //PK_CAPS_ENCRYPT // PK_CAPS_NEW 
 	}
 }
