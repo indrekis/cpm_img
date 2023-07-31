@@ -20,8 +20,6 @@ struct plugin_config_t {
 	minimal_fixed_string_t<MAX_PATH> config_file_path;
 	uint32_t plugin_interface_version_lo = 0;
 	uint32_t plugin_interface_version_hi = 0;
-	bool ignore_boot_signature = true;	   // Some historical floppy images contain correct BPB but do not have 0x55AA signature
-										   // Examples are Norton Utilities 2.00 and 2.01; CheckIt Pro v1.11 (3.5-1.44mb)	
 #if defined FLTK_ENABLED_EXPERIMENTAL && !defined NDEBUG
 	bool allow_dialogs = true;
 	bool allow_txt_log = true;
@@ -32,14 +30,6 @@ struct plugin_config_t {
 	minimal_fixed_string_t<MAX_PATH> log_file_path;
 	file_handle_t log_file = file_handle_t();
 
-	bool use_VFAT = true;
-	bool process_DOS1xx_images = true;
-	bool process_MBR = true;
-	bool process_DOS1xx_exceptions = true; // Highly specialized exceptions for the popular images found on the Internet
-	bool search_for_boot_sector = true;	   // WinImage-like behavior -- if boot is not on the beginning of the file,
-										   // search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA
-	size_t search_for_boot_sector_range = 64 * 1024;
-
 	//! Enum is not convenient here because of I/O
 	static constexpr int NO_DEBUG     = 0;
 	static constexpr int DEBUGGER_MSG = 1;
@@ -49,6 +39,7 @@ struct plugin_config_t {
 	bool read_conf (const PackDefaultParamStruct* dps, bool reread);
 	bool write_conf();
 
+	minimal_fixed_string_t<33> image_format{"osbexec1"};
 private:
 	using options_map_t = std::map<std::string, std::string>;
 

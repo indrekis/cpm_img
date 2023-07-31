@@ -23,6 +23,7 @@ public:
 	}
 
 	constexpr size_t size() const { return size_m; }
+	constexpr size_t empty() const { return size_m == 0; }
 	constexpr size_t capacity() const { return data_m.size() - 1; }
 	constexpr bool is_empty() const { return size_m == 0; }
 	constexpr       char& operator[](size_t idx) { return data_m[idx]; }

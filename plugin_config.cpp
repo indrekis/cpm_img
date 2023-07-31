@@ -116,6 +116,7 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         return false; // Wrong configuration would be overwritten by default configuration.
     }
     try {
+#if 0
         ignore_boot_signature = get_option_from_map<decltype(ignore_boot_signature)>("ignore_boot_signature"s);
         use_VFAT = get_option_from_map<decltype(use_VFAT)>("use_VFAT"s);
         process_DOS1xx_images = get_option_from_map<decltype(process_DOS1xx_images)>("process_DOS1xx_images"s);
@@ -123,9 +124,13 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         process_DOS1xx_exceptions = get_option_from_map<decltype(process_DOS1xx_exceptions)>("process_DOS1xx_exceptions"s);
         search_for_boot_sector = get_option_from_map<decltype(search_for_boot_sector)>("search_for_boot_sector"s);
         search_for_boot_sector_range = get_option_from_map<decltype(search_for_boot_sector_range)>("search_for_boot_sector_range"s);
+#endif 
         allow_dialogs = get_option_from_map<decltype(allow_dialogs)>("allow_dialogs"s);
         allow_txt_log = get_option_from_map<decltype(allow_txt_log)>("allow_txt_log"s);
         debug_level = get_option_from_map<decltype(debug_level)>("debug_level"s);
+        image_format.clear();
+        auto tf = get_option_from_map<std::string>("image_format"s);
+        image_format.push_back( tf.c_str() );
 
         if (allow_txt_log && log_file_path.is_empty()) {
             auto tstr = get_option_from_map<std::string>("log_file_path"s);
@@ -166,7 +171,8 @@ bool plugin_config_t::write_conf()
     if ( !cf ) {
         return false;
     }
-    fprintf(cf, "[FAT_disk_img_plugin]\n");
+    fprintf(cf, "[CPM_disk_img_plugin]\n");
+#if 0
     fprintf(cf, "ignore_boot_signature=%x\n", ignore_boot_signature);
     fprintf(cf, "use_VFAT=%x\n", use_VFAT);
     fprintf(cf, "process_DOS1xx_images=%x\n", process_DOS1xx_images);
@@ -177,11 +183,13 @@ bool plugin_config_t::write_conf()
     fprintf(cf, "# # search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA\n");
     fprintf(cf, "search_for_boot_sector=%x\n", search_for_boot_sector);
     fprintf(cf, "search_for_boot_sector_range=%zx\n", search_for_boot_sector_range);
+#endif 
     fprintf(cf, "allow_dialogs=%x\n", allow_dialogs);
     fprintf(cf, "allow_txt_log=%x\n", allow_txt_log);
     log_file_path.push_back("D:\\Temp\\fatimg.txt");
     fprintf(cf, "log_file_path=%s\n", log_file_path.data());
     fprintf(cf, "debug_level=%x\n\n", debug_level);
+    fprintf(cf, "image_format=%s\n\n", "osbexec1");
 
     std::fclose(cf);
     return true;

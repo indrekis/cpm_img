@@ -30,6 +30,7 @@
 #include "wcxhead.h"
 #include <new>
 #include <memory>
+#include <exception>
 #include <cstddef>
 #include <vector>
 #include <algorithm>
@@ -78,22 +79,36 @@ BOOL APIENTRY DllMain(HANDLE hModule,
 	return TRUE;
 }
 
-bool set_file_attributes_ex(const char* filename, uint32_t attribute) {
-	// TODO: Fix
-	/*
-	DWORD winattr = FILE_ATTRIBUTE_NORMAL;
-	if (attribute.is_readonly()) winattr |= FILE_ATTRIBUTE_READONLY;
-	if (attribute.is_archive() ) winattr |= FILE_ATTRIBUTE_ARCHIVE;
-	if (attribute.is_hidden()  ) winattr |= FILE_ATTRIBUTE_HIDDEN;
-	if (attribute.is_system()  ) winattr |= FILE_ATTRIBUTE_SYSTEM;
-	*/
-	return set_file_attributes(filename, attribute); // Codes are equal
+//! TODO: How to support F1-F4 attributes
+static int cpm_attr_to_tcmd_attr(cpm_attr_t attr) {
+	int res = 0;
+	if (attr & CPM_ATTR_RO)
+		res |= 0x01;
+	if (attr & CPM_ATTR_SYS)
+		res |= 0x04;
+	if (attr & CPM_ATTR_ARCV)
+		res |= 0x20;
+	return res;
 }
+
+bool set_file_attributes_cpm(const char* filename, uint32_t attribute) {
+	return set_file_attributes(filename, cpm_attr_to_tcmd_attr(attribute)); // Codes are equal
+}
+
+class disk_err_t : public std::exception {
+	int err_code = 0;
+public: 
+	disk_err_t(const char* descr, int err_code_in):
+		std::exception{ descr }, err_code{ err_code_in }{
+	}
+	int get_err_code() const { return err_code; }
+};
 
 struct whole_disk_t {
 	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
 	file_handle_t hArchFile = file_handle_t(); //opened file handles
 	int openmode_m = PK_OM_LIST;
+	bool read_only = true;
 	size_t image_file_size = 0;	
 
 	tChangeVolProc   pLocChangeVol = nullptr;
@@ -114,37 +129,53 @@ struct whole_disk_t {
 
 	uint32_t curren_file_counter = 0;
 
-	whole_disk_t(const char* archname_in, size_t vol_size, file_handle_t fh, int openmode):
-		hArchFile{ fh }, openmode_m(openmode), image_file_size(vol_size)
+	whole_disk_t(const char* archname_in, size_t vol_size, int openmode, bool read_only_in):
+		openmode_m(openmode), image_file_size(vol_size), read_only{ read_only_in }
 	{
 		archname.push_back(archname_in);
+		process_image(read_only);
 	}
 
 	uint32_t users_counter = 0;
 
-	//! TODO: How to support F1-F4 attributes
-	static int cpm_attr_to_tcmd_attr(cpm_attr_t attr) {
-		int res = 0;
-		if (attr & CPM_ATTR_RO)
-			res |= 0x01;
-		if (attr & CPM_ATTR_SYS)
-			res |= 0x04;
-		if (attr & CPM_ATTR_ARCV)
-			res |= 0x20;
-		return res;
-	}
-
 	~whole_disk_t() {
-		if (gargv) {
-			cpmglobfree(gargv, gargc);
-			// TODO: fix call of cpmUmount
-			cpmUmount(&super);
-//			Device_close(&super.dev);
-		}
 		if (hArchFile)
 			close_file(hArchFile);
+		if (gargv) {
+			cpmglobfree(gargv, gargc);
+		}
+		cpmUmount(&super);
 	}
+private: 
+	void process_image(bool read_only) {
+		hArchFile = open_file_shared_read(archname.data());
+		if (hArchFile == file_open_error_v)
+		{
+			hArchFile = file_handle_t();
+			throw disk_err_t{ "Error opening archive file.", E_EOPEN };
+		} else if( !read_only ){
+			//! Hack as for now 
+			close_file(hArchFile);
+			hArchFile = file_handle_t();
+		}
 
+		const char* errs = Device_open(&super.dev, archname.data(), read_only ? O_RDONLY : O_RDWR,
+			driver_name.empty() ? nullptr : driver_name.c_str());
+
+		if (errs) // Pointer to error string 
+		{
+			plugin_config.log_print("\n\nError# Failed opening file: %s", errs);
+			throw disk_err_t{ "Error in Device_open.", E_EOPEN };
+		}
+		int erri = cpmReadSuper(&super, &root,
+			plugin_config.image_format.empty() ? nullptr : plugin_config.image_format.data(),
+			use_uppercase);
+		if (erri == -1)
+		{
+			plugin_config.log_print("\n\nError# Failed reading superblock.");
+			throw disk_err_t{ "Error in cpmReadSuper.", E_EOPEN };
+		}
+	}
 };
 //------- whole_disk_t implementation --------------------------
 using archive_HANDLE = whole_disk_t*;
@@ -152,6 +183,7 @@ using archive_HANDLE = whole_disk_t*;
 //-----------------------=[ DLL exports ]=--------------------
 
 extern "C" {
+	// TODO: Osborne1 TD0 disk does not work. Same for cpmls compiled by MSVC, but works for cpmls compiled by MinGW.
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
@@ -167,37 +199,15 @@ extern "C" {
 		ArchiveData->CmtSize = 0;
 		ArchiveData->CmtState = 0;
 
-		auto hArchFile = open_file_shared_read(ArchiveData->ArcName);
-		if (hArchFile == file_open_error_v)
-		{
-			ArchiveData->OpenResult = E_EOPEN;
-			return nullptr;
-		}
 		try {
-			arch = std::make_unique<whole_disk_t>(ArchiveData->ArcName, 0,
-				hArchFile, ArchiveData->OpenMode);
+			arch = std::make_unique<whole_disk_t>(ArchiveData->ArcName, 0, ArchiveData->OpenMode, true);
+		}
+		catch (disk_err_t& err) {
+			ArchiveData->OpenResult = err.get_err_code();
+			return nullptr;
 		}
 		catch (std::bad_alloc&) {
 			ArchiveData->OpenResult = E_NO_MEMORY;
-			return nullptr;
-		}
-
-		const char* errs = Device_open(&(arch->super.dev), ArchiveData->ArcName, O_RDONLY,
-			arch->driver_name.empty() ? nullptr : arch->driver_name.c_str());
-
-		if (errs) // Pointer to error string 
-		{
-			plugin_config.log_print("\n\nError# Failed opening file: %s", errs);
-			ArchiveData->OpenResult = E_EOPEN;
-			return nullptr;
-		}
-		int erri = cpmReadSuper(&arch->super, &arch->root, 
-			arch->format.empty() ? nullptr : arch->format.c_str(), 
-			arch->use_uppercase);
-		if (erri == -1) 
-		{
-			plugin_config.log_print("\n\nError# Failed reading superblock.");
-			ArchiveData->OpenResult = E_EOPEN;
 			return nullptr;
 		}
 
@@ -245,7 +255,7 @@ extern "C" {
 				ts.push_back(dirent_raw_ptr + 2);
 				strcpy(HeaderData->FileName, ts.data());
 			}
-			HeaderData->FileAttr = hArcData->cpm_attr_to_tcmd_attr(file_ino.attr);
+			HeaderData->FileAttr = cpm_attr_to_tcmd_attr(file_ino.attr);
 			// TODO: check and fix time
 			HeaderData->FileTime = file_ino.mtime;
 			HeaderData->PackSize = file_ino.size; // (statbuf.size+127)/128
@@ -313,7 +323,7 @@ extern "C" {
 		if(file_ino.mtime != 0 )
 			set_file_datetime(hUnpFile, file_ino.mtime); // TODO: Check and fix
 		close_file(hUnpFile);
-		set_file_attributes_ex(dest, hArcData->cpm_attr_to_tcmd_attr(file_ino.attr) );
+		set_file_attributes_cpm(dest, file_ino.attr );
 
 		if (Operation == PK_TEST) {
 			delete_file(dest);
@@ -361,70 +371,41 @@ extern "C" {
 	}
 #endif 
 	DLLEXPORT int STDCALL CanYouHandleThisFile(char* FileName) { // BOOL == int 
-		auto hArchFile = open_file_shared_read(FileName);
-		if (hArchFile == file_open_error_v)
-		{
-			return 0;
-		} else {
-			close_file(hArchFile);
-		}
-
 		// Caching results here would complicate code too much as for now
-		cpmSuperBlock super;
-		cpmInode root;
-		//! TODO: Read from config
-		std::string format{FORMAT}; //  osb1sssd, osbexec1
-		// struct cpmInode root;
-		std::string driver_name{}; // devopts; example: driver_name=="imd", "tele" etc.
-		//! TODO: parse extension and use it as a possible driver name.
-		bool use_uppercase = true;
+		std::unique_ptr<whole_disk_t> loc_arch;
 
-		const char* errs = Device_open(&(super.dev), FileName, O_RDONLY,
-			driver_name.empty() ? nullptr : driver_name.c_str());
-
-		if (errs) // Pointer to error string 
-		{
-			plugin_config.log_print("\n\nError# Failed opening file: %s in CanYouHandleThisFile\n", errs);
+		try {
+			loc_arch = std::make_unique<whole_disk_t>(FileName, 0, PK_OM_LIST, true);
+		}
+		catch (disk_err_t& err) {
+			plugin_config.log_print("\n\nError# Failed opening file: %s in CanYouHandleThisFile with code %i", 
+				FileName, err.get_err_code());
 			return 0;
 		}
-		int erri = cpmReadSuper(&super, &root,
-			format.empty() ? nullptr : format.c_str(),
-			use_uppercase);
-		if (erri == -1)
-		{
-			plugin_config.log_print("\n\nError# Failed reading superblock of %s in CanYouHandleThisFile.", FileName);
+		catch (std::bad_alloc&) {
+			plugin_config.log_print("\n\nError# Failed opening file: %s in CanYouHandleThisFile -- bad_alloc",
+				FileName );
 			return 0;
 		}
-		cpmUmount(&super);
-
 		return 1; 
 	}
 
 	DLLEXPORT int STDCALL DeleteFiles(char* PackedFile, char* DeleteList) {
-		cpmSuperBlock super;
-		cpmInode root;
-		//! TODO: Read from config
-		std::string format{FORMAT}; //  osb1sssd, osbexec1
-		// struct cpmInode root;
-		std::string driver_name{}; // devopts; example: driver_name=="imd", "tele" etc.
-		//! TODO: parse extension and use it as a possible driver name.
-		bool use_uppercase = true;
+		// Caching results here would complicate code too much as for now
+		std::unique_ptr<whole_disk_t> loc_arch;
 
-		const char* errs = Device_open(&(super.dev), PackedFile, O_RDONLY,
-			driver_name.empty() ? nullptr : driver_name.c_str());
-
-		if (errs) // Pointer to error string 
-		{
-			plugin_config.log_print("\n\nError# Failed opening file: %s in DeleteFiles\n", errs);
-			return E_EOPEN;
+		try {
+			loc_arch = std::make_unique<whole_disk_t>(PackedFile, 0, PK_OM_LIST, false);
 		}
-		int erri = cpmReadSuper(&super, &root,
-			format.empty() ? nullptr : format.c_str(),
-			use_uppercase);
-		if (erri == -1)
-		{
-			plugin_config.log_print("\n\nError# Failed reading superblock of %s in DeleteFiles.", PackedFile);
-			return E_EOPEN;
+		catch (disk_err_t& err) {
+			plugin_config.log_print("\n\nError# Failed opening file: %s in DeleteFiles with code %i",
+				PackedFile, err.get_err_code());
+			return err.get_err_code();
+		}
+		catch (std::bad_alloc&) {
+			plugin_config.log_print("\n\nError# Failed opening file: %s in DeleteFiles -- bad_alloc",
+				PackedFile);
+			return E_NO_MEMORY;
 		}
 
 		std::vector<const char*> file_list;
@@ -447,7 +428,7 @@ extern "C" {
 				plugin_config.log_print("\n\nError# Wrong file name %s for archive %s in DeleteFiles.", 
 					cur_ptr, PackedFile);
 			}
-			if (cpmUnlink(&root, ps.c_str()) == -1)
+			if (cpmUnlink(&loc_arch->root, ps.c_str()) == -1)
 			{
 				plugin_config.log_print("\n\nError# Failed deleting file %s in archive %s with error: %s.", 
 					ps.c_str(), PackedFile, boo); // »ииии! ќбробка помилок...
@@ -455,7 +436,6 @@ extern "C" {
 			}
 			cur_ptr += sl + 1;
 		}
-		cpmUmount(&super);
 		return 0;
 	}
 
@@ -463,41 +443,32 @@ extern "C" {
 		// PK_PACK_MOVE_FILES         1 Delete original after packing
 		// PK_PACK_SAVE_PATHS         2 Save path names of files
 		// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
-		cpmSuperBlock super;
-		cpmInode root;
-		//! TODO: Read from config
-		std::string format{FORMAT}; //  osb1sssd, osbexec1
-		// struct cpmInode root;
-		std::string driver_name{}; // devopts; example: driver_name=="imd", "tele" etc.
-		//! TODO: parse extension and use it as a possible driver name.
-		bool use_uppercase = true;
 
 		std::string SubPathS{SubPath ? SubPath : ""};
 		if (!SubPathS.empty() && SubPathS.size() != 2) {
 			// Impossible path
-			plugin_config.log_print("\n\nError# Impossible in-image path: %s for %s archive in PackFiles\n", 
+			plugin_config.log_print("\n\nError# Impossible in-image path: %s for %s archive in PackFiles\n",
 				SubPath, PackedFile);
 			return E_EOPEN;
 		}
 
+		std::unique_ptr<whole_disk_t> loc_arch;
+
+		try {
+			loc_arch = std::make_unique<whole_disk_t>(PackedFile, 0, PK_OM_LIST, false);
+		}
+		catch (disk_err_t& err) {
+			plugin_config.log_print("\n\nError# Failed opening file: %s in DeleteFiles with code %i",
+				PackedFile, err.get_err_code());
+			return err.get_err_code();
+		}
+		catch (std::bad_alloc&) {
+			plugin_config.log_print("\n\nError# Failed opening file: %s in DeleteFiles -- bad_alloc",
+				PackedFile);
+			return E_NO_MEMORY;
+		}
+
 		std::string SrcPathS{SrcPath ? SrcPath : ""};
-
-		const char* errs = Device_open(&(super.dev), PackedFile, O_RDONLY,
-			driver_name.empty() ? nullptr : driver_name.c_str());
-
-		if (errs) // Pointer to error string 
-		{
-			plugin_config.log_print("\n\nError# Failed opening file: %s in DeleteFiles\n", errs);
-			return E_EOPEN;
-		}
-		int erri = cpmReadSuper(&super, &root,
-			format.empty() ? nullptr : format.c_str(),
-			use_uppercase);
-		if (erri == -1)
-		{
-			plugin_config.log_print("\n\nError# Failed reading superblock of %s in DeleteFiles.", PackedFile);
-			return E_EOPEN;
-		}
 
 		std::vector<const char*> file_list;
 		const char* cur_ptr = AddList;
@@ -558,7 +529,7 @@ extern "C" {
 
 			struct cpmFile file;
 			struct cpmInode ino;
-			if (cpmCreat(&root, ps.c_str(), &ino, 0666) == -1)
+			if (cpmCreat(&loc_arch->root, ps.c_str(), &ino, 0666) == -1)
 			{
 				plugin_config.log_print("\n\nError# Failed creating file %s in archive %s with error: %s.",
 					ps.c_str(), PackedFile, boo);
@@ -586,7 +557,6 @@ extern "C" {
 			}
 			cur_ptr += sl + 1;
 		}
-		cpmUmount(&super);
 		return 0;
 	}
 
