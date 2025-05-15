@@ -727,7 +727,9 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
   if ((fp=fopen("diskdefs","r"))==(FILE*)0 && (fp=fopen(diskdefs_path,"r"))==(FILE*)0)
   {
     fprintf(stderr,"%s: Neither `diskdefs' nor `%s' could be opened.\n",cmd, diskdefs_path);
-    exit(1);
+    // exit(1);
+    // TODO: Fix error handling
+    return -1;
   }
   ln=1;
   while (fgets(line,sizeof(line),fp)!=(char*)0)
@@ -765,7 +767,9 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
           if (d->blksiz <= 0)
           {
             fprintf(stderr,"%s: invalid blocksize `%s' in line %d\n",cmd,argv[1],ln);
-            exit(1);
+            // exit(1);
+            // TODO: Fix error handling
+            return -1;
           }
         }
         else if (strcmp(argv[0],"maxdir")==0) d->maxdir=strtol(argv[1],(char**)0,0);
@@ -788,7 +792,9 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
               if (end==s)
               {
                 fprintf(stderr,"%s: invalid skewtab `%s' at `%s' in line %d\n",cmd,argv[1],s,ln);
-                exit(1);
+                // exit(1);
+                // TODO: Fix error handling
+                return -1;
               }
               s=end;
               ++sectors;
@@ -811,12 +817,16 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
           if ((errno==ERANGE && val==LONG_MAX)||(errno!=0 && val<=0))
           {
             fprintf(stderr,"%s: invalid offset value `%s' (%s) in line %d\n",cmd,argv[1],strerror(errno),ln);
-            exit(1);
+            // exit(1);
+            // TODO: Fix error handling
+            return -1;
           }
           if (endptr==argv[1])
           {
             fprintf(stderr,"%s: offset value `%s' is not a number in line %d\n",cmd,argv[1],ln);
-            exit(1);
+            // exit(1);
+            // TODO: Fix error handling
+            return -1;
           }
           if (*endptr!='\0')
           {
@@ -833,7 +843,9 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
                 if (d->sectrk<0||d->tracks<0||d->secLength<0)
                 {
                   fprintf(stderr,"%s: offset must be specified after sectrk, tracks and secLength in line %d\n",cmd,ln);
-                  exit(1);
+                  // exit(1);
+                  // TODO: Fix error handling
+                  return -1;
                 }
                 multiplier=d->sectrk*d->secLength;
                 break;
@@ -841,19 +853,25 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
                 if (d->sectrk<0||d->tracks<0||d->secLength<0)
                 {
                   fprintf(stderr,"%s: offset must be specified after sectrk, tracks and secLength in line %d\n",cmd,ln);
-                  exit(1);
+                  // exit(1);
+                  // TODO: Fix error handling
+                  return -1;
                 }
                 multiplier=d->secLength;
                 break;
               default:
                 fprintf(stderr,"%s: unknown unit specifier `%c' in line %d\n",cmd,*endptr,ln);
-                exit(1);
+                // exit(1);
+                // TODO: Fix error handling
+                return -1;
             }
           }
           if (val*multiplier>INT_MAX)
           {
             fprintf(stderr,"%s: effective offset is out of range in line %d\n",cmd,ln);
-            exit(1);
+            // exit(1);
+            // TODO: Fix error handling
+            return -1;
           }
           d->offset=val*multiplier;
         }
@@ -868,7 +886,9 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
           else 
           {
             fprintf(stderr, "%s: invalid OS type `%s' in line %d\n",cmd,argv[1],ln);
-            exit(1);
+            // exit(1);
+            // TODO: Fix error handling
+            return -1;
           }
         }
 	else if (strcmp(argv[0], "libdsk:format")==0)
@@ -880,7 +900,9 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
       else if (argc>0 && argv[0][0]!='#' && argv[0][0]!=';')
       {
         fprintf(stderr,"%s: invalid keyword `%s' in line %d\n",cmd,argv[0],ln);
-        exit(1);
+        // exit(1);
+        // TODO: Fix error handling
+        return -1;
       }
     }
     else if (argc==2 && strcmp(argv[0],"diskdef")==0)
@@ -902,37 +924,51 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
   if (!found)
   {
     fprintf(stderr,"%s: unknown format %s\n",cmd,format);
-    exit(1);
+    // exit(1);
+    // TODO: Fix error handling
+    return -1;
   }
   if (d->boottrk<0 && d->bootsec<0)
   {
     fprintf(stderr, "%s: boottrk / bootsec parameter invalid or missing from diskdef\n",cmd);
-    exit(1);
+    // exit(1);
+    // TODO: Fix error handling
+    return -1;
   }
   if (d->secLength<0)
   {
     fprintf(stderr, "%s: secLength parameter invalid or missing from diskdef\n",cmd);
-    exit(1);
+    // exit(1);
+    // TODO: Fix error handling
+    return -1;
   }
   if (d->sectrk<0)
   {
     fprintf(stderr, "%s: sectrk parameter invalid or missing from diskdef\n",cmd);
-    exit(1);
+    // exit(1);
+    // TODO: Fix error handling
+    return -1;
   }
   if (d->tracks<0)
   {
     fprintf(stderr, "%s: tracks parameter invalid or missing from diskdef\n",cmd);
-    exit(1);
+    // exit(1);
+    // TODO: Fix error handling
+    return -1;
   }
   if (d->blksiz<0)
   {
     fprintf(stderr, "%s: blocksize parameter invalid or missing from diskdef\n",cmd);
-    exit(1);
+    // exit(1);
+    // TODO: Fix error handling
+    return -1;
   }
   if (d->maxdir<0)
   {
     fprintf(stderr, "%s: maxdir parameter invalid or missing from diskdef\n",cmd);
-    exit(1);
+    // exit(1);
+    // TODO: Fix error handling
+    return -1;
   }
   return 0;
 }
@@ -947,7 +983,9 @@ static int amsReadSuper(struct cpmSuperBlock *d, char const *format)
   if ((err=Device_readSector(&d->dev, 0, 0, (char *)boot_sector)))
   {
     fprintf(stderr,"%s: Failed to read Amstrad superblock (%s)\n",cmd,err);
-    exit(1);
+    // exit(1);
+	// TODO: Fix error handling
+	return -1;
   }
   boot_spec=(boot_sector[0] == 0 || boot_sector[0] == 3)?boot_sector:(unsigned char*)0;
   /* Check for JCE's extension to allow Amstrad and MSDOS superblocks
@@ -963,7 +1001,9 @@ static int amsReadSuper(struct cpmSuperBlock *d, char const *format)
   if (boot_spec==(unsigned char*)0)
   {
     fprintf(stderr,"%s: Amstrad superblock not present\n",cmd);
-    exit(1);
+    // exit(1);
+    // TODO: Fix error handling
+    return -1;
   }
   /* boot_spec[0] = format number: 0 for SS SD, 3 for DS DD
               [1] = single/double sided and density flags
@@ -1049,8 +1089,16 @@ int cpmReadSuper(struct cpmSuperBlock *d, struct cpmInode *root, char const *for
   while (s_ifreg && !S_ISREG(s_ifreg)) s_ifreg<<=1;
   assert(s_ifreg);
 
-  if (strcmp(format,"amstrad")==0) amsReadSuper(d,format);
-  else diskdefReadSuper(d,format);
+  int res; 
+  if (strcmp(format,"amstrad")==0) 
+      res = amsReadSuper(d,format);
+  else
+      res = diskdefReadSuper(d,format);
+  if (res == -1)
+  {
+	  // TODO: Fix error handling
+      return -1;
+  }
 
   d->uppercase=uppercase;
 
@@ -2149,7 +2197,9 @@ int mkfs(struct cpmSuperBlock* drive, const char* name, const char* format, cons
         if ((err = Device_open(&super.dev, name, O_RDWR, NULL)))
         {
             fprintf(stderr, "%s: can not open %s (%s)\n", cmd, name, err);
-            exit(1);
+            // exit(1);
+            // TODO: Fix error handling
+            return -1;
         }
         cpmReadSuper(&super, &root, format, uppercase);
 
