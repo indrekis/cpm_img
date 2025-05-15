@@ -1,3 +1,5 @@
+// This is a personal academic project. Dear PVS-Studio, please check it.
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 /*
       LIBDSK: General floppy and diskimage access library                 
       Copyright (C) 2002, 2014  John Elliott <seasip.webmaster@gmail.com>    

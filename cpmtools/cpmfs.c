@@ -1089,7 +1089,9 @@ int cpmReadSuper(struct cpmSuperBlock *d, struct cpmInode *root, char const *for
   while (s_ifreg && !S_ISREG(s_ifreg)) s_ifreg<<=1;
   assert(s_ifreg);
 
-  int res; 
+  int res; // This is a personal academic project. Dear PVS-Studio, please check it.
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
   if (strcmp(format,"amstrad")==0) 
       res = amsReadSuper(d,format);
   else
