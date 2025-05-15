@@ -53,7 +53,8 @@
 DRV_CLASS dc_linux = 
 {
 	sizeof(LINUX_DSK_DRIVER),
-	"floppy",
+	NULL,		/* superclass */
+	"floppy\0",
 	"Linux floppy driver",
 	&linux_open,	/* open */
 	&linux_creat,	/* create new */
@@ -163,7 +164,8 @@ static dsk_err_t check_geom(LINUX_DSK_DRIVER *self, const DSK_GEOMETRY *dg)
 }
 
 
-dsk_err_t linux_open(DSK_DRIVER *self, const char *filename)
+dsk_err_t linux_open(DSK_DRIVER *self, const char *filename,
+		DSK_REPORTFUNC diagfunc)
 {
 	LINUX_DSK_DRIVER *lxself;
 	struct stat st;
@@ -205,7 +207,7 @@ dsk_err_t linux_open(DSK_DRIVER *self, const char *filename)
  * unless we wanted to mess around with mknod() here */
 dsk_err_t linux_creat(DSK_DRIVER *self, const char *filename)
 {
-	return linux_open(self, filename);
+	return linux_open(self, filename, NULL);
 }
 
 
@@ -235,9 +237,10 @@ dsk_err_t linux_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
                              void *buf, dsk_pcyl_t cylinder,
                               dsk_phead_t head, dsk_psect_t sector)
 {
+/* Don't dg_x_sector() here; if required it will have been done in dg_ls2ps() */
 	return linux_xread(self, geom, buf, cylinder, head, cylinder, 
 			dg_x_head(geom, head), 
-			dg_x_sector(geom, head, sector), geom->dg_secsize, 0);
+			sector, geom->dg_secsize, 0);
 }
 
 dsk_err_t linux_xread(DSK_DRIVER *self, const DSK_GEOMETRY *geom, void *buf,
@@ -298,9 +301,10 @@ dsk_err_t linux_write(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
                              const void *buf, dsk_pcyl_t cylinder,
                               dsk_phead_t head, dsk_psect_t sector)
 {
+/* Don't dg_x_sector() here; if required it will have been done in dg_ls2ps() */
 	return linux_xwrite(self, geom, buf, cylinder, head, cylinder, 
 			dg_x_head(geom, head),
-			dg_x_sector(geom, head, sector), 
+			sector, 
 			geom->dg_secsize, 0);
 }
 
@@ -457,7 +461,7 @@ dsk_err_t linux_secid(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
 	result->fmt_cylinder = raw_cmd.reply[3];	
 	result->fmt_head     = raw_cmd.reply[4];	
 	result->fmt_sector   = raw_cmd.reply[5];	
-	result->fmt_secsize  = 128 << raw_cmd.reply[6];	
+	result->fmt_secsize  = dsk_expand_psh(raw_cmd.reply[6]);
 	lxself->lx_cylinder = cylinder;
 	return DSK_ERR_OK;
 }

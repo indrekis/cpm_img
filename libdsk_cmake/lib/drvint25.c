@@ -39,10 +39,13 @@
 #include <go32.h>
 #endif
 
+#define INT25_TRACE 0
+
 DRV_CLASS dc_dosint25 =
 {
 	sizeof(INT25_DSK_DRIVER),
-	"int25",
+	NULL,		/* superclass */
+	"int25\0",
 	"DOS INT 25/26 driver",
 
 	int25_open,	/* open */
@@ -83,18 +86,18 @@ static dsk_err_t translate_error(unsigned ax)
 /* For a floppy drive, opening it and creating it are the same thing */
 dsk_err_t int25_creat(DSK_DRIVER *self, const char *filename)
 {
-	return int25_open(self, filename);
+	return int25_open(self, filename, NULL);
 }											
 
 
-dsk_err_t int25_open(DSK_DRIVER *self, const char *filename)
+dsk_err_t int25_open(DSK_DRIVER *self, const char *filename, DSK_REPORTFUNC diag)
 {
 	INT25_DSK_DRIVER *int25self;
 	char vname[20];
 	int driveno;                      
 	dsk_err_t err;
 	union REGS rg;
-
+    
 	/* Sanity check: Is this meant for our driver? */
 	if (self->dr_class != &dc_dosint25) return DSK_ERR_BADPTR;
 	int25self = (INT25_DSK_DRIVER *)self;
@@ -202,14 +205,16 @@ dsk_err_t int25_rdwr(int rdwr, INT25_PACKET *pkt)
 	dosmemput(code16, sizeof(code16), __tb + 16);
 
 	memset(&regs, 0, sizeof(regs));
-
-/*	{
+               
+#if INT25_TRACE               
+	{
 		unsigned char buf[1024];
 		dosmemget(__tb, 1024, buf);
 		fprintf(stderr, "Packet: %04lx %02x %p\n",
 			pkt->sector, pkt->count, pkt->buf);
 		dosmemput(buf, 1024, __tb);
-	} */
+	} 
+#endif
 
 	if (pkt->sector < 65536L)
 	{
@@ -224,12 +229,15 @@ dsk_err_t int25_rdwr(int rdwr, INT25_PACKET *pkt)
 
 		if (!(regs.x.flags & 1))
 			return DSK_ERR_OK;
-/*	{
+#if INT25_TRACE               
+	{
 		unsigned char buf[1024];
 		dosmemget(__tb, 1024, buf);
 		fprintf(stderr, "smalldrive: error 0x%04x\n", regs.x.ax);
 		dosmemput(buf, 1024, __tb);
-	} */
+	} 
+#endif
+	
 /* Returns 0x207 on a >32Mb drive, 0x0001 on a FAT32 drive */
 		if (regs.x.ax != 0x207 && regs.x.ax != 0x0001 && 
 				regs.x.ax != 0x701F)
@@ -332,10 +340,13 @@ dsk_err_t int25_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
 	if (!buf || !self || !geom || self->dr_class != &dc_dosint25) 
 		return DSK_ERR_BADPTR;
 	int25self = (INT25_DSK_DRIVER *)self;
-/*
+
+#if INT25_TRACE
+
 	fprintf(stderr, "int25_read: cyl=%d head=%d sector=%d\n",
 			cylinder, head, sector);
-*/
+#endif
+
 	pkt.sector = ((((long)cylinder * geom->dg_heads) + (long)head) * 
 			geom->dg_sectors) + sector - geom->dg_secbase;
 	pkt.count = 1;
@@ -403,6 +414,9 @@ dsk_err_t int25_getgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom)
 	long sectot, factor;
 	int cflag, ax;
 
+#if INT25_TRACE
+      fprintf(stderr, "int25_getgeom()\n");
+#endif
 	/* XXX Support FAT32 drives here */
 	if (!self || !geom || self->dr_class != &dc_dosint25) 
 		return DSK_ERR_BADPTR;
@@ -425,11 +439,14 @@ dsk_err_t int25_getgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom)
 	rg.x.dx = rg.x.di = FP_OFF(bpb);
 	sg.ds   = rg.x.si = FP_SEG(bpb);
 	intdosx(&rg, &rg, &sg);
-/*	fprintf(stderr, "rg.x.cflag=0x%04x rg.x.ax=0x%04x\n", 
-			rg.x.cflag, rg.x.ax); */
+#if INT25_TRACE
+	fprintf(stderr, "rg.x.cflag=0x%04x rg.x.ax=0x%04x\n", 
+			rg.x.cflag, rg.x.ax); 
+#endif
 	cflag = rg.x.cflag;
 	ax = rg.x.ax;
-#else
+	
+#else /* DOS16FLOPPY */
 	reg.x.ax = 0x440D;
 	reg.h.bl = int25self->int25_unit + 1;
 	reg.x.cx = 0x0860;	/* Get device parameters */

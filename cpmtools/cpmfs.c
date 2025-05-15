@@ -49,6 +49,8 @@ char const *boo;
 static mode_t s_ifdir=1;
 static mode_t s_ifreg=1;
 
+char diskdefs_path[PATH_MAX] = DISKDEFS;
+
 /* memcpy7            -- Copy string, leaving 8th bit alone      */ /*{{{*/
 static void memcpy7(char *dest, char const *src, int count)
 {
@@ -722,9 +724,9 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
 
   d->libdskGeometry[0] = '\0';
   d->type=0;
-  if ((fp=fopen("diskdefs","r"))==(FILE*)0 && (fp=fopen(DISKDEFS,"r"))==(FILE*)0)
+  if ((fp=fopen("diskdefs","r"))==(FILE*)0 && (fp=fopen(diskdefs_path,"r"))==(FILE*)0)
   {
-    fprintf(stderr,"%s: Neither `diskdefs' nor `" DISKDEFS "' could be opened.\n",cmd);
+    fprintf(stderr,"%s: Neither `diskdefs' nor `%s' could be opened.\n",cmd, diskdefs_path);
     exit(1);
   }
   ln=1;
@@ -1372,7 +1374,16 @@ int cpmNamei(const struct cpmInode *dir, char const *filename, struct cpmInode *
     }
   }
   /*}}}*/
-  if (highestExtno==-1) return -1;
+  if (highestExtno == -1) {
+      // TODO: Can here be a better fix?
+      i->attr = -1;
+      i->ino = dir->sb->maxdir + 2; // ???
+      i->mode = -1;
+      i->sb = dir->sb;
+      i->atime = i->mtime = i->ctime = 0;
+      i->size = 0;
+      return -1;
+  }
   /* calculate size */ /*{{{*/
   {
     int block;

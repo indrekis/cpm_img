@@ -72,7 +72,8 @@ typedef struct remote_class
 
 /* The 'remote' LibDsk driver: */
 
-dsk_err_t remote_open(DSK_DRIVER *self, const char *filename);
+dsk_err_t remote_open(DSK_DRIVER *self, const char *filename,
+		DSK_REPORTFUNC diagfunc);
 dsk_err_t remote_creat(DSK_DRIVER *self, const char *filename);
 dsk_err_t remote_close(DSK_DRIVER *self);
 dsk_err_t remote_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,

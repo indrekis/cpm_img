@@ -32,7 +32,8 @@
 DRV_CLASS dc_dos16 = 
 {
 	sizeof(DOS16_DSK_DRIVER),
-	"floppy",
+	NULL,		/* superclass */
+	"floppy\0",
 	"PC BIOS floppy driver",
 
 	dos16_open,		/* open */
@@ -78,11 +79,11 @@ static dsk_err_t translate_int13_error(unsigned ax)
 /* For a floppy drive, opening it and creating it are the same thing */
 dsk_err_t dos16_creat(DSK_DRIVER *self, const char *filename)
 {
-	return dos16_open(self, filename);
+	return dos16_open(self, filename, NULL);
 }											
 
 
-dsk_err_t dos16_open(DSK_DRIVER *self, const char *filename)
+dsk_err_t dos16_open(DSK_DRIVER *self, const char *filename, DSK_REPORTFUNC diag)
 {
 	DOS16_DSK_DRIVER *d16self;
 	char vname[20];

@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2001  John Elliott <seasip.webmaster@gmail.com>            *
+ *    Copyright (C) 2001,2022  John Elliott <seasip.webmaster@gmail.com>   *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -34,6 +34,53 @@ static DRV_CLASS *classes[] =
 	NULL
 };
 
+#undef strcmpi
+
+#if HAVE_STRCMPI
+        /* */
+#else
+ #if HAVE_STRICMP
+  #define strcmpi stricmp
+ #else
+  #if HAVE_STRCASECMP
+   #define strcmpi strcasecmp
+  #else
+
+/* Compiler does not provide a strcmpi, do a naive implementation */
+int strcmpi(const char *a, const char *b)
+{
+	while (*a && *b)
+	{
+		if (toupper(*a) != toupper(*b))
+			return toupper(*a) - toupper(*b);
+		++a;
+		++b;
+	}
+	/* At least one of *a and *b is 0 */
+	return (toupper(*a) - toupper(*b));
+}
+
+  #endif
+ #endif
+#endif
+
+
+/* [1.5.3] Allow for aliases in driver names. Extend driver name so it's
+ * a chain of nul-terminated strings finally terminated by a double-nul */
+static int match_drvname(const char *type, DRV_CLASS *dc)
+{
+	const char *dn = dc->dc_drvname;
+
+	while (*dn)
+	{
+		if (!strcmpi(type, dn)) 
+		{
+			return 1;
+		}
+		dn += 1 + strlen(dn);
+	}
+	return 0;
+}
 
 
 
@@ -74,7 +121,10 @@ static dsk_err_t dsk_icreat(DSK_DRIVER **self, const char *filename, int ndrv, C
 
 
 /* Attempt to open a DSK file with driver <ndrv> */
-static dsk_err_t dsk_iopen(DSK_DRIVER **self, const char *filename, int ndrv, COMPRESS_DATA *cd)
+static dsk_err_t dsk_iopen(DSK_DRIVER **self, const char *filename, int ndrv, 
+			COMPRESS_DATA *cd,
+			DSK_REPORTFUNC diagfunc,
+			DSK_REPORTEND diagend)
 {
 	DRV_CLASS *dc = classes[ndrv];
 	dsk_err_t err;
@@ -83,12 +133,17 @@ static dsk_err_t dsk_iopen(DSK_DRIVER **self, const char *filename, int ndrv, CO
 	if (cd) filename = cd->cd_ufilename;
 
 	if (!dc) return DSK_ERR_BADPTR;
-	
+
 	(*self) = dsk_malloc(dc->dc_selfsize);
 	if (!*self) return DSK_ERR_NOMEM;
 	dr_construct(*self, dc);
 
-	err = (dc->dc_open)(*self, filename);
+	err = (dc->dc_open)(*self, filename, diagfunc);
+/*	printf("%s: open %s = %d\n", dc->dc_drvname, filename, err); */
+	if (diagend)
+	{
+		(*diagend)();
+	}
 	if (err == DSK_ERR_OK) 
 	{
 		(*self)->dr_compress = cd;
@@ -110,7 +165,7 @@ LDPUBLIC32 dsk_err_t LDPUBLIC16 dsk_creat(DSK_DRIVER **self, const char *filenam
 	if (!self || !filename || !type) return DSK_ERR_BADPTR;
 
 	dg_custom_init();
-	if (compress)
+	if (compress && strcmp(compress, "none"))
 	{	
 		e = comp_creat(&cd, filename, compress);
 		if (e) return e;
@@ -119,7 +174,7 @@ LDPUBLIC32 dsk_err_t LDPUBLIC16 dsk_creat(DSK_DRIVER **self, const char *filenam
 
 	for (ndrv = 0; classes[ndrv]; ndrv++)
 	{
-		if (!strcmp(type, classes[ndrv]->dc_drvname))
+		if (match_drvname(type, classes[ndrv]))
 		{
 			e = dsk_icreat(self, filename, ndrv, cd);
 			if (e != DSK_ERR_OK && cd) comp_abort(&cd);
@@ -131,40 +186,56 @@ LDPUBLIC32 dsk_err_t LDPUBLIC16 dsk_creat(DSK_DRIVER **self, const char *filenam
 }
 
 
-
-/* Close a DSK file. Frees the pointer and sets it to null. */
-LDPUBLIC32 dsk_err_t LDPUBLIC16 dsk_open(DSK_DRIVER **self, const char *filename, const char *type,
+LDPUBLIC32 dsk_err_t LDPUBLIC16 dsk_open(DSK_DRIVER **self, 
+			const char *filename, 
+			const char *type,
 			const char *compress)
+{
+	return dsk_diagopen(self, filename, type, compress, NULL, NULL);
+}
+
+
+LDPUBLIC32 dsk_err_t LDPUBLIC16 dsk_diagopen(DSK_DRIVER **self, 
+			const char *filename, 
+			const char *type,
+			const char *compress,
+			DSK_REPORTFUNC diag,
+			DSK_REPORTEND diagend)
 {
 	int ndrv;
 	dsk_err_t e;
-	COMPRESS_DATA *cd;
+	COMPRESS_DATA *cd = NULL;
 
 	if (!self || !filename) return DSK_ERR_BADPTR;
 
 	dg_custom_init();
 
 	/* See if it's compressed */
-	e = comp_open(&cd, filename, compress);
-	if (e != DSK_ERR_OK && e != DSK_ERR_NOTME) return e;
-	
-	if (type)
+	if (compress == NULL || strcmp(compress, "none"))
 	{
-		for (ndrv = 0; classes[ndrv]; ndrv++)
+		e = comp_open(&cd, filename, compress);
+		if (e != DSK_ERR_OK && e != DSK_ERR_NOTME) return e;
+		
+		if (type)
 		{
-			if (!strcmp(type, classes[ndrv]->dc_drvname))
+			for (ndrv = 0; classes[ndrv]; ndrv++)
 			{
-				e = dsk_iopen(self, filename, ndrv, cd);
-				if (e && cd) comp_abort(&cd);
-				return e;
+				if (match_drvname(type, classes[ndrv]))
+				{
+					e = dsk_iopen(self, filename, ndrv, cd,
+						diag, diagend);
+					if (e && cd) comp_abort(&cd);
+					return e;
+				}
 			}
+			if (cd) comp_abort(&cd);
+			return DSK_ERR_NODRVR;
 		}
-		if (cd) comp_abort(&cd);
-		return DSK_ERR_NODRVR;
 	}
 	for (ndrv = 0; classes[ndrv]; ndrv++)
 	{
-		e = dsk_iopen(self, filename, ndrv, cd);
+		e = dsk_iopen(self, filename, ndrv, cd, 
+				diag, diagend);
 		if (e != DSK_ERR_NOTME) 
 		{
 			if (e != DSK_ERR_OK && cd) comp_abort(&cd);
@@ -203,6 +274,8 @@ LDPUBLIC32 dsk_err_t LDPUBLIC16 dsk_close(DSK_DRIVER **self)
 		dsk_free(opt);
 		opt = opt2;
 	}
+	/* And any comments */
+	dsk_set_comment(*self, NULL);
 	dsk_free (*self);
 	*self = NULL;
 	return e;
@@ -266,6 +339,20 @@ LDPUBLIC32 unsigned char LDPUBLIC16 dsk_get_psh(size_t secsize)
 }
 
 
+/* Treat secsize values of 9 and higher as though they were 8. This stops
+ * libdsk crashing on disk images with funny PSH values, and matches how 
+ * the real uPD765A handles sizes >= 8. */
+LDPUBLIC32 size_t LDPUBLIC16 dsk_expand_psh(unsigned char psh)
+{
+	if (psh <= 8)
+	{
+		return 128 << psh;
+	}
+	return 32768;
+}
+
+
+
 LDPUBLIC32 const char * LDPUBLIC16 dsk_drvname(DSK_DRIVER *self)
 {
 	if (!self || !self->dr_class || !self->dr_class->dc_drvname)
@@ -300,4 +387,16 @@ LDPUBLIC32 const char * LDPUBLIC16 dsk_compdesc(DSK_DRIVER *self)
 	return comp_desc(self->dr_compress);	
 }
 
+
+int drv_instanceof(DSK_DRIVER *drv, DRV_CLASS *dc)
+{
+	DRV_CLASS *clazz = drv->dr_class;
+
+	while (clazz)
+	{
+		if (clazz == dc) return 1;
+		clazz = clazz->dc_super;
+	}
+	return 0;
+}
 

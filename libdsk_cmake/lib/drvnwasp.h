@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2001  John Elliott <seasip.webmaster@gmail.com>            *
+ *    Copyright (C) 2001, 2017  John Elliott <seasip.webmaster@gmail.com>  *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -30,7 +30,7 @@ typedef struct
 	unsigned long  nw_filesize;
 } NWASP_DSK_DRIVER;
 
-dsk_err_t nwasp_open(DSK_DRIVER *self, const char *filename);
+dsk_err_t nwasp_open(DSK_DRIVER *self, const char *filename, DSK_REPORTFUNC diagfunc);
 dsk_err_t nwasp_creat(DSK_DRIVER *self, const char *filename);
 dsk_err_t nwasp_close(DSK_DRIVER *self);
 dsk_err_t nwasp_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
@@ -47,3 +47,6 @@ dsk_err_t nwasp_xseek(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
 dsk_err_t nwasp_status(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
                                 dsk_phead_t head, unsigned char *result);
 dsk_err_t nwasp_getgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom);
+dsk_err_t nwasp_to_ldbs(DSK_DRIVER *self, struct ldbs **result, DSK_GEOMETRY *geom);
+dsk_err_t nwasp_from_ldbs(DSK_DRIVER *self, struct ldbs *source, DSK_GEOMETRY *geom);
+

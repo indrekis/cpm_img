@@ -7,119 +7,146 @@ project(libdsk)
 
 if(VCPKG_TOOLCHAIN) # MSVC
     SET(CMAKE_C_FLAGS  "/wd4996") #_SCL_SECURE_NO_WARNINGS
+    include_directories(${PROJECT_SOURCE_DIR}/msvc_dirent)
 endif()
 
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 
 set(dsk_LIB_SRCS
-    lib/dskread.c
-    lib/dskwrite.c
-    lib/dskcheck.c
-    lib/dskstat.c
-    lib/dsklphys.c
-    lib/dskfmt.c
-    lib/dskopen.c
-    lib/dskpars.c
-    lib/dskerror.c
-    lib/dskseek.c
-    lib/dsksecid.c
-    lib/dskgeom.c
-    lib/dsktread.c
-    lib/dsksgeom.c
-    lib/dskjni.c
-    lib/dskreprt.c
-    lib/dskcmt.c
-    lib/dskretry.c
-    lib/dskdirty.c
-    lib/dsktrkid.c
-    lib/dskrtrd.c
-    lib/comp.h
-    lib/compi.h
-    lib/compress.h
-    lib/compress.inc
-    lib/compress.c
-    lib/compsq.c
-    lib/compsq.h
-    lib/compgz.c
-    lib/compgz.h
-    lib/comptlzh.c
-    lib/comptlzh.h
-    lib/compbz2.c
-    lib/compbz2.h
-    lib/compdskf.c
-    lib/compdskf.h
-    lib/crctable.c
-    lib/crctable.h
-    lib/crc16.c
-    lib/crc16.h
-#    lib/rpccli.c
-#    lib/rpcfuncs.h
-#    lib/rpcmap.c
-#    lib/rpcpack.c
-#    lib/rpcserv.c
-#    lib/remote.c
-#    lib/remote.h
-#    lib/remote.inc
-#    lib/remall.h
-#    lib/rpctios.c
-#    lib/rpctios.h
-#    lib/rpcfork.c
-#    lib/rpcfork.h
-#    lib/rpcfossl.c
-#    lib/rpcfossl.h
-#    lib/rpcwin32.c
-#    lib/rpcwin32.h
-    lib/drv.h
-    lib/drvi.h
-    lib/drivers.h
-    lib/drivers.inc
-    lib/drvjv3.h
-    lib/drvjv3.c
-    lib/drvlinux.h
-    lib/drvlinux.c
-    lib/drvntwdm.h
-    lib/drvntwdm.c
-    lib/drvwin32.h
-    lib/drvwin32.c
-    lib/w95defs.h
-    lib/drvwin16.h
-    lib/drvwin16.c
-    lib/w16defs.h
-    lib/drvint25.h
-    lib/drvint25.c
-    lib/drvdos16.h
-    lib/drvdos16.c
-    lib/drvdos32.h
-    lib/drvdos32.c
-    lib/drvcpcem.h
-    lib/drvcpcem.c
-    lib/drvdskf.h
-    lib/drvdskf.c
-    lib/drvimd.h
-    lib/drvimd.c
-    lib/drvlogi.h
-    lib/drvlogi.c
-    lib/drvsimh.h
-    lib/drvsimh.c
-    lib/drvposix.h
-    lib/drvposix.c
-    lib/drvnwasp.h
-    lib/drvnwasp.c
-    lib/drvadisk.h
-    lib/drvadisk.c
-    lib/drvrcpm.h
-    lib/drvrcpm.c
-    lib/drvtele.h
-    lib/drvtele.c
-    lib/drvmyz80.h
-    lib/drvmyz80.c
-    lib/drvydsk.h
-    lib/drvydsk.c
-    lib/drvcfi.h
-    lib/drvcfi.c
-    lib/drvqm.h
-    lib/drvqm.c)
+
+lib/blast.c    
+lib/blast.h    
+lib/comp.h     
+lib/compbz2.c  
+lib/compbz2.h  
+lib/compdskf.c 
+lib/compdskf.h 
+lib/compgz.c   
+lib/compgz.h   
+lib/compi.h    
+lib/compqrst.c 
+lib/compqrst.h         
+lib/compress.c         
+lib/compress.h         
+lib/compsq.c           
+lib/compsq.h   
+lib/comptlzh.c 
+lib/comptlzh.h 
+lib/crc16.c    
+lib/crc16.h    
+lib/crctable.c 
+lib/crctable.h 
+lib/drivers.h  
+lib/drv.h      
+lib/drvadisk.c 
+lib/drvadisk.h 
+lib/drvcfi.c   
+lib/drvcfi.h   
+lib/drvcpcem.c 
+lib/drvcpcem.h 
+lib/drvdc42.c  
+lib/drvdc42.h  
+lib/drvdos16.c 
+lib/drvdos16.h 
+lib/drvdos32.c 
+lib/drvdos32.h 
+lib/drvdskf.c  
+lib/drvdskf.h  
+lib/drvgotek.c 
+lib/drvgotek.h 
+lib/drvi.h     
+lib/drvimd.c   
+lib/drvimd.h   
+lib/drvint25.c 
+lib/drvint25.h 
+lib/drvjv3.c   
+lib/drvjv3.h   
+lib/drvldbs.c  
+lib/drvldbs.h  
+lib/drvldbst.c 
+lib/drvldbst.h 
+lib/drvlinux.c 
+lib/drvlinux.h 
+lib/drvlogi.c  
+lib/drvlogi.h  
+lib/drvmyz80.c 
+lib/drvmyz80.h 
+lib/drvntwdm.c 
+lib/drvntwdm.h 
+lib/drvnwasp.c 
+lib/drvnwasp.h
+lib/drvposix.c
+lib/drvposix.h
+lib/drvqm.c   
+lib/drvqm.h   
+lib/drvqrst.c 
+lib/drvqrst.h 
+lib/drvrcpm.c 
+lib/drvrcpm.h 
+lib/drvsap.c  
+lib/drvsap.h  
+lib/drvsimh.c 
+lib/drvsimh.h 
+lib/drvtele.c 
+lib/drvtele.h 
+lib/drvwin16.c 
+lib/drvwin16.h 
+lib/drvwin32.c 
+lib/drvwin32.h 
+lib/drvydsk.c  
+lib/drvydsk.h  
+lib/dskcheck.c 
+lib/dskcmt.c   
+lib/dskcopy.c  
+lib/dskdiag.c  
+lib/dskdirty.c 
+lib/dskerror.c 
+lib/dskfmt.c   
+lib/dskgeom.c  
+lib/dskiconv.c 
+lib/dskjni.c   
+lib/dsklphys.c 
+lib/dskopen.c  
+lib/dskpars.c  
+lib/dskread.c  
+lib/dskreprt.c 
+lib/dskretry.c 
+lib/dskrtrd.c  
+lib/dsksecid.c 
+lib/dskseek.c  
+lib/dsksgeom.c 
+lib/dskstat.c  
+lib/dsktread.c 
+lib/dsktrkid.c 
+lib/dskwrite.c 
+lib/ldbs.c     
+lib/ldbs.h     
+lib/ldbs2txt.c 
+lib/remall.h   
+# lib/remote.c   
+# lib/remote.h   
+# lib/rpccli.c   
+# lib/rpcfork.c  
+# lib/rpcfork.h  
+# lib/rpcfossl.c 
+# lib/rpcfossl.h 
+# lib/rpcfuncs.h
+# lib/rpcmap.c
+# lib/rpcpack.c
+# lib/rpcserv.c
+# lib/rpctios.c
+# lib/rpctios.h
+# lib/rpcwin32.c
+# lib/rpcwin32.h
+lib/txt2ldbs.c
+#lib/uk_co_demon_seasip_libdsk_Drive.h
+#lib/uk_co_demon_seasip_libdsk_FormatType.h
+#lib/uk_co_demon_seasip_libdsk_Geometry.h
+#lib/uk_co_demon_seasip_libdsk_LibDsk.h
+lib/w16defs.h
+lib/w95defs.h
+)    
      
 find_package(ZLIB REQUIRED)
 find_package(BZip2 REQUIRED)

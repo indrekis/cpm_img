@@ -30,7 +30,7 @@ typedef struct
 	unsigned long  simh_filesize;	/* True length of the .DSK file */
 } SIMH_DSK_DRIVER;
 
-dsk_err_t simh_open(DSK_DRIVER *self, const char *filename);
+dsk_err_t simh_open(DSK_DRIVER *self, const char *filename, DSK_REPORTFUNC diagfunc);
 dsk_err_t simh_creat(DSK_DRIVER *self, const char *filename);
 dsk_err_t simh_close(DSK_DRIVER *self);
 dsk_err_t simh_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
@@ -47,4 +47,8 @@ dsk_err_t simh_xseek(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
                                 dsk_pcyl_t cylinder, dsk_phead_t head);
 dsk_err_t simh_status(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
                       dsk_phead_t head, unsigned char *result);
+/* Convert to LDBS format. */
+dsk_err_t simh_to_ldbs(DSK_DRIVER *self, struct ldbs **result, DSK_GEOMETRY *geom);
 
+/* Convert from LDBS format. */
+dsk_err_t simh_from_ldbs(DSK_DRIVER *self, struct ldbs *source, DSK_GEOMETRY *geom);

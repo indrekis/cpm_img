@@ -2,13 +2,13 @@
 # Using MSVC 2019 and create 64-bit plugin:
 #  cmake -A x64   .. -G"Visual Studio 16" 	
 # Using MSVC 2019 and create 32-bit plugin:
-#  cmake -A Win32 .. -G"Visual Studio 16"
+#  cmake -A Win32 .. -G"Visual Studio 16" 
 #
 # To enable FLTK usage:
 #  cmake -A x64   .. -G"Visual Studio 16" -DFLTK_ENABLED_EXPERIMENTAL=1
 #  cmake -A Win32 .. -G"Visual Studio 16" -DFLTK_ENABLED_EXPERIMENTAL=1
 #
-# Build by:
+# Build by: 
 #  cmake --build . --config Release
 # or any of:
 #  cmake --build . --config [Debug|RelWithDebInfo|MinSizeRel]
@@ -47,13 +47,13 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 	set_target_properties(cpmimg_wcx PROPERTIES SUFFIX .wcx PREFIX "") 	
 endif()
 
-target_link_libraries(cpmimg_wcx PRIVATE libdsk cpmfs) 
+target_link_libraries(cpmimg_wcx PRIVATE cpmfs libdsk) 
 
 add_executable(cpmls cpmtools/cpmls.c  cpmtools/getopt.c)
-target_link_libraries(cpmls libdsk cpmfs)
+target_link_libraries(cpmls cpmfs libdsk)
 
 add_executable(mkfs.cpm cpmtools/mkfs.cpm.c  cpmtools/getopt.c)
-target_link_libraries(mkfs.cpm libdsk cpmfs)
+target_link_libraries(mkfs.cpm cpmfs libdsk)
 
 
 if( DEFINED FLTK_ENABLED_EXPERIMENTAL)

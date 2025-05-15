@@ -31,8 +31,6 @@
 #include <sys/stat.h>
 #endif
 
-#include <windows.h>
-
 #if !defined(S_ISREG) && defined(S_IFMT) && defined(S_IFREG)
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
 #endif
@@ -53,9 +51,8 @@ static COMPRESS_CLASS *classes[] =
 
 static dsk_err_t comp_construct(COMPRESS_DATA *cd, const char *filename)
 {
-    cd->cd_cfilename = dsk_malloc(1 + strlen(filename));    
+    cd->cd_cfilename = dsk_malloc_string(filename);
     if (!cd->cd_cfilename) return DSK_ERR_NOMEM;
-    strcpy(cd->cd_cfilename, filename);
     cd->cd_ufilename = NULL;
     cd->cd_readonly = 0;
     return DSK_ERR_OK;
@@ -286,8 +283,6 @@ dsk_err_t comp_mktemp(COMPRESS_DATA *self, FILE **fp)
     char tmpdir[PATH_MAX];
 
     self->cd_ufilename = dsk_malloc(PATH_MAX);
-    if (!self->cd_ufilename)
-        return DSK_ERR_NOMEM;
 
 /* Win32: Create temp file using GetTempFileName() */
 #ifdef HAVE_GETTEMPFILENAME

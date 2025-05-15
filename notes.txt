@@ -1,0 +1,15 @@
+$ git remote add origin https://github.com/OWNER/REPOSITORY.git
+# Set a new remote
+
+$ git remote -v
+
+
+$ git remote add origin 
+# Sets the new remote
+$ git remote -v
+# Verifies the new remote URL
+$ git push origin main
+# Pushes the changes in your local repository up to the remote repository you specified as the origin
+
+
+ git reset HEAD -- libdsk_cmake/CMakeSettings.json

@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <array>
+#include <cstring>
 
 template<size_t N>
 class minimal_fixed_string_t {

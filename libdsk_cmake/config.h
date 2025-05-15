@@ -10,6 +10,7 @@
 /* Define to 1 if you have the <bzlib.h> header file. */
 #define HAVE_BZLIB_H 1
 
+#define HAVE_CHSIZE 1  /* ? */
 /* Define to 1 if you have the <direct.h> header file. */
 #define HAVE_DIRECT_H 1
 
@@ -31,6 +32,7 @@
 /* Define to 1 if you have the `fork' function. */
 /* #undef HAVE_FORK */
 
+#define HAVE_FTRUNCATE 1 /* ? */
 /* Define to 1 if you have the `GetTempFileName' function. */
 /* #undef HAVE_GETTEMPFILENAME */
 
@@ -107,6 +109,9 @@
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #define HAVE_SYS_STAT_H 1
 
+/* Define to 1 if you have the <sys/sysmacros.h> header file. */
+/* #undef HAVE_SYS_SYSMACROS_H */
+
 /* Define to 1 if you have the <sys/types.h> header file. */
 #define HAVE_SYS_TYPES_H 1
 
@@ -152,7 +157,7 @@
 #define PACKAGE_NAME "LibDsk"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "LibDsk 1.4.2"
+#define PACKAGE_STRING "LibDsk 1.5.19"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "libdsk"
@@ -161,13 +166,13 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "1.4.2"
+#define PACKAGE_VERSION "1.5.19"
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1
 
 /* Version number of package */
-#define VERSION "1.4.2"
+#define VERSION "1.5.19"
 
 /* Define to empty if `const' does not conform to ANSI C. */
 /* #undef const */

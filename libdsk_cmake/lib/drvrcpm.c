@@ -111,7 +111,8 @@ static void rtr_chain(const char *s, RCPMFS_BUFFER *b)
 DRV_CLASS dc_rcpmfs = 
 {
 	sizeof(RCPMFS_DSK_DRIVER),
-	"rcpmfs",
+	NULL,		/* superclass */
+	"rcpmfs\0",
 	"Reverse CP/MFS driver",
 	rcpmfs_open,	/* open */
 	rcpmfs_creat,   /* create new */
@@ -363,7 +364,7 @@ static dsk_err_t rcpmfs_option(RCPMFS_DSK_DRIVER *self, char *variable,
 {
 	char *s;
 	dsk_err_t err;
-	char tempbuf[160];
+	char *tempbuf;
 
 	/* Trim spaces from the end of variable & start of value */
 	s = strchr(variable, ' ');
@@ -410,8 +411,13 @@ static dsk_err_t rcpmfs_option(RCPMFS_DSK_DRIVER *self, char *variable,
 		return err;
 	}
 /* If line not recognised, see if the disk geometry parser recognises it */
+	tempbuf = dsk_malloc(5 + strlen(variable) + strlen(value));
+	if (!tempbuf) return DSK_ERR_NOMEM;
+	
 	sprintf(tempbuf, "%s=%s", variable, value);
-	return dg_parseline(tempbuf, &self->rc_geom, NULL);
+	err = dg_parseline(tempbuf, &self->rc_geom, NULL);
+	dsk_free(tempbuf);
+	return err;
 }
 
 
@@ -461,17 +467,27 @@ static dsk_err_t rcpmfs_dump_options(RCPMFS_DSK_DRIVER *self, FILE *fp)
 
 
 
-static dsk_err_t rcpmfs_parse(RCPMFS_DSK_DRIVER *self, FILE *fp)
+static dsk_err_t rcpmfs_parse(RCPMFS_DSK_DRIVER *self, FILE *fp, DSK_REPORTFUNC diagfunc)
 {
 	char *s;
 	char linebuf[160];
+	char diagbuf[160];
 	int got_format = 0;
 	dsk_err_t err;
 
 	if (!self) return DSK_ERR_BADPTR;
 
+	diaghead(diagfunc, ".libdsk.ini file");
 	while (fgets(linebuf, sizeof(linebuf), fp))
 	{
+		if (diagfunc)
+		{
+			strcpy(diagbuf, linebuf);
+/* Trim off newlines */
+			s = strrchr(diagbuf, '\n');
+			if (s) *s = 0;
+			(*diagfunc)(diagbuf);
+		}
 /* Force case-insensitivity */
 		for (s = linebuf; *s; s++)
 		{
@@ -731,7 +747,6 @@ static dsk_err_t rcpmfs_read_dirent(RCPMFS_DSK_DRIVER *self, unsigned entryno,
             unsigned char *entry, char *realname)
 {
 	dsk_lsect_t lsect;
-	unsigned dirsecs;
 	unsigned entriespersec;
 	RCPMFS_BUFFER *rcb;
 	char *map_entry;
@@ -742,7 +757,6 @@ static dsk_err_t rcpmfs_read_dirent(RCPMFS_DSK_DRIVER *self, unsigned entryno,
 				entryno, rcpmfs_max_dirent(self));
 		return DSK_ERR_OVERRUN;
 	}
-	dirsecs	   = rcpmfs_secperblock(self) * self->rc_dirblocks;
 	entriespersec = (self->rc_geom.dg_secsize) / 32;
 	
 	lsect = entryno / entriespersec;
@@ -789,7 +803,6 @@ static dsk_err_t rcpmfs_write_dirent(RCPMFS_DSK_DRIVER *self, unsigned entryno,
 {
 	dsk_lsect_t lsect;
 	dsk_err_t   err;
-	unsigned dirsecs;
 	unsigned entriespersec;
 	RCPMFS_BUFFER *rcb;
 	char *map_entry;
@@ -805,7 +818,6 @@ static dsk_err_t rcpmfs_write_dirent(RCPMFS_DSK_DRIVER *self, unsigned entryno,
 		return DSK_ERR_OVERRUN;
 	}
 
-	dirsecs	   = rcpmfs_secperblock(self) * self->rc_dirblocks;
 	entriespersec = (self->rc_geom.dg_secsize) / 32;
 	
 	lsect = entryno / entriespersec;
@@ -889,17 +901,14 @@ static dsk_err_t rcpmfs_add_dirent(RCPMFS_DSK_DRIVER *self,
 unsigned char *rcpmfs_lookup(RCPMFS_DSK_DRIVER *self, unsigned blockno,
 		unsigned long *diroffs, char *filename)
 {
-	RCPMFS_BUFFER *rcb;
 	dsk_err_t err;
-	int blocks_per_extent, blkp, extsize;
+	int blocks_per_extent, blkp;
 	int nb;
 	static unsigned char entry[32];
 	unsigned entryno, entrymax;
 
 	blocks_per_extent = rcpmfs_blocks_per_extent(self);
-	extsize		   = rcpmfs_extent_size(self);
 	RTR_CHAIN("rcpmfs_lookup", self->rc_bufhead);	
-	rcb = self->rc_bufhead;
 	entrymax = rcpmfs_max_dirent(self);
 	for (entryno = 0; entryno < entrymax; entryno++)
 	{
@@ -1170,6 +1179,12 @@ static dsk_err_t rcpmfs_readdir(RCPMFS_DSK_DRIVER *self)
 				else	cpm_dirent[DIR_S1]  = (unsigned char)(filesize & 0x7F);
 				cpm_dirent[DIR_S2]  = (extent * (exm+1)) / 32;
 				cpm_dirent[DIR_RC]  = (unsigned char)((extsize + 127) / 128);
+/* Record counts > 0x80 imply a full extent of 0x80 records. So limit to 7 
+ * bits if the extent is not actually full. */
+				if (cpm_dirent[DIR_RC] > 0x80)
+				{
+					cpm_dirent[DIR_RC] &= 0x7F;
+				}
 				filesize -= extsize;
 				++extent;
 /* Add extent to the directory */
@@ -1229,7 +1244,7 @@ RTRACE(("Disc full, rolling back this entry\n"));
 
 
 
-dsk_err_t rcpmfs_open(DSK_DRIVER *self, const char *passed)
+dsk_err_t rcpmfs_open(DSK_DRIVER *self, const char *passed, DSK_REPORTFUNC diagfunc)
 {
 	dsk_err_t err;
 	struct stat st;
@@ -1289,11 +1304,57 @@ dsk_err_t rcpmfs_open(DSK_DRIVER *self, const char *passed)
 	fp = fopen(filename, "r");
 	if (fp)
 	{
-		err = rcpmfs_parse(rcself, fp);
+		err = rcpmfs_parse(rcself, fp, diagfunc);
 		fclose(fp);
 		if (err) return err;
 	}
-	return rcpmfs_readdir(rcself);
+	err = rcpmfs_readdir(rcself);
+	if (err) return err;
+	if (diagfunc)
+	{
+		unsigned char *buf;
+		dsk_pcyl_t cyl;
+		dsk_phead_t head;
+		dsk_psect_t sec;
+		dsk_lsect_t lsect, lsmax, lsboot;
+		long pos = 0;
+
+		buf = dsk_malloc(rcself->rc_geom.dg_secsize);
+		if (buf)
+		{
+			lsmax = rcself->rc_geom.dg_cylinders *
+				rcself->rc_geom.dg_sectors *
+				rcself->rc_geom.dg_heads;
+			lsboot = rcself->rc_systracks * 
+				  rcself->rc_geom.dg_sectors;
+
+			for (lsect = 0; lsect < lsmax; lsect++)
+			{
+				dg_ls2ps(&rcself->rc_geom, lsect,
+						&cyl, &head, &sec);
+				
+				if (!rcpmfs_read(self, &rcself->rc_geom,
+					buf, cyl, head, sec)) 
+				{
+					char *caption = "";
+
+					diaghead(diagfunc, "Simulated "
+						"cylinder %d head %d sector %d",
+						 cyl, head, sec);
+					if (lsect == lsboot) caption = "Simulated directory";
+					else if (lsect == 0) caption = "Simulated boot track"; 
+					diaghex(diagfunc, pos, buf, 
+						rcself->rc_geom.dg_secsize, 
+						caption);	
+					pos += rcself->rc_geom.dg_secsize;
+				}
+			}
+			dsk_free(buf);
+		}
+	}
+
+
+	return DSK_ERR_OK;
 }
 
 
@@ -1365,7 +1426,7 @@ dsk_err_t rcpmfs_creat(DSK_DRIVER *self, const char *passed)
 	fp = fopen(filename, "r");
 	if (fp)
 	{
-		err = rcpmfs_parse(rcself, fp);
+		err = rcpmfs_parse(rcself, fp, NULL);
 		fclose(fp);
 		if (err) return err;
 	}
@@ -1436,12 +1497,16 @@ static dsk_err_t rcpmfs_psfind2(RCPMFS_DSK_DRIVER *self,
 	unsigned blockoffs;
 	static char fnbuf[20];
 	unsigned char *dirent;
-	unsigned exm, extent;
+	unsigned exm, extent, extent2;
 	unsigned long diroffs, extent_len;
+	unsigned char dirent2[32];
+	unsigned entryno, entrymax;
+	int last_extent;
+	dsk_err_t err;
 
 	if (!self || !filename || !offset || !bufsize) 
 		return DSK_ERR_BADPTR;
-	
+
 	*filename = NULL;
 	exm	    = rcpmfs_get_exm(self);
 	secperblock = rcpmfs_secperblock(self);
@@ -1469,7 +1534,36 @@ static dsk_err_t rcpmfs_psfind2(RCPMFS_DSK_DRIVER *self,
 
 /* See how many bytes there are in the extent */
 	extent_len = extent_bytes(self, dirent);
-	if (dirent[DIR_S1])
+
+/* << LibDsk 1.5.18  See if this is the last extent, and only trim it if
+ *                   it is. So scan the directory for all extents of this
+ *                   file... */
+
+	last_extent = 1;
+	entrymax = rcpmfs_max_dirent(self);
+	for (entryno = 0; entryno < entrymax; entryno++)
+	{
+		err = rcpmfs_read_dirent(self, entryno, dirent2, NULL);
+		if (!err)
+		{
+			/* If user number and filename match, we have a match*/
+			if (!memcmp(dirent, dirent2, 12))
+			{
+				/* Get the extent number of this entry and 
+				 * see if it's higher than the one we're looking
+				 * at. If so this is not the last extent. */
+				extent2  = (dirent2[DIR_EX] & 0x1F) + (dirent2[DIR_S2] * 32);
+				extent2 /= (exm + 1);
+			
+				RTRACE(("%d:%-11.11s %02x v %02x\n", 
+				     dirent2[0], dirent2+1, extent, extent2));
+
+				if (extent2 > extent) last_extent = 0;
+			}
+		}
+	}
+	if (dirent[DIR_S1] && last_extent)
+/* >> LibDsk 1.5.18 */
 	{
 		if (self->rc_fsversion == FSVERSION_ISX)
 			extent_len -= dirent[DIR_S1];
@@ -1790,7 +1884,7 @@ RTRACE(("Rename '%s' as '%s'", realname, newname));
 		err = rcpmfs_adjust_size(self, oldlen - newlen, new[DIR_S1], rcpmfs_mkname(self,realname));
 	}
 /* File remains roughly, the same size, but Last Record Byte Count tweaked. */
-	else if (old[0x0d] != new[0x0d] && (newextent == 0))	
+	else if (old[DIR_S1] != new[DIR_S1] && (newextent == 0))	
 	{
 		rcpmfs_cpmname(new, realname);
 		err = rcpmfs_adjust_size(self, 0, new[DIR_S1], rcpmfs_mkname(self,realname));
@@ -2090,13 +2184,13 @@ dsk_err_t rcpmfs_xseek(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
 dsk_err_t rcpmfs_status(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
 				   dsk_phead_t head, unsigned char *result)
 {
-	RCPMFS_DSK_DRIVER *rcself;
+/*	RCPMFS_DSK_DRIVER *rcself; */
 
 	if (!self || !geom || self->dr_class != &dc_rcpmfs) 
 		return DSK_ERR_BADPTR;
-	rcself = (RCPMFS_DSK_DRIVER *)self;
+/*	rcself = (RCPMFS_DSK_DRIVER *)self;
 
-/*  if (!rcself->px_fp) *result &= ~DSK_ST3_READY;
+	if (!rcself->px_fp) *result &= ~DSK_ST3_READY;
 	if (rcself->px_readonly) *result |= DSK_ST3_RO; */
 	return DSK_ERR_OK;
 }
@@ -2204,20 +2298,20 @@ dsk_err_t rcpmfs_option_set(DSK_DRIVER *self, const char *optname, int value)
 		 * If setting an option doesn't actually change anything, 
 		 * return and don't bother rewriting .libdsk.ini 
 		 */
-		case 0: if (rcpmfs_self->rc_blocksize == (128 << value))
+		case 0: if (rcpmfs_self->rc_blocksize == (unsigned int)(128 << (value)))
 				return DSK_ERR_OK;
 			rcpmfs_self->rc_blocksize = (128 << value);
 			rcpmfs_self->rc_dirblocks = (dirents * 32) / 
 				rcpmfs_self->rc_blocksize;
 			break;
-		case 1: if (rcpmfs_self->rc_blocksize == (128 * (1+value)))
+		case 1: if (rcpmfs_self->rc_blocksize == (unsigned int)(128 * (1+value)))
 				return DSK_ERR_OK;
 			rcpmfs_self->rc_blocksize = 128 * (1 + value);
 			rcpmfs_self->rc_dirblocks = (dirents * 32) / 
 				rcpmfs_self->rc_blocksize;
 			break;
 		case 2: return DSK_ERR_RDONLY;	/* EXM can't be changed */
-		case 3: if (rcpmfs_self->rc_totalblocks == (1 + value))
+		case 3: if (rcpmfs_self->rc_totalblocks == (unsigned int)(1 + value))
 				return DSK_ERR_OK;
 			rcpmfs_self->rc_totalblocks = value + 1;
 			break;
@@ -2229,7 +2323,7 @@ dsk_err_t rcpmfs_option_set(DSK_DRIVER *self, const char *optname, int value)
 		case 5: return DSK_ERR_RDONLY; /* AL0 can't be changed. */
 		case 6: return DSK_ERR_RDONLY; /* AL1 can't be changed. */
 		case 7: return DSK_ERR_RDONLY; /* CKS can't be changed. */
-		case 8: if (rcpmfs_self->rc_systracks == value) 
+		case 8: if (rcpmfs_self->rc_systracks == (unsigned int)value) 
 				return DSK_ERR_OK;
 			rcpmfs_self->rc_systracks = value;
 			break;

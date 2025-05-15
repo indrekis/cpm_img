@@ -30,7 +30,8 @@ typedef struct
 	unsigned long  mz_filesize;	/* True length of the .DSK file */
 } MYZ80_DSK_DRIVER;
 
-dsk_err_t myz80_open(DSK_DRIVER *self, const char *filename);
+dsk_err_t myz80_open(DSK_DRIVER *self, const char *filename,
+	DSK_REPORTFUNC diagfunc);
 dsk_err_t myz80_creat(DSK_DRIVER *self, const char *filename);
 dsk_err_t myz80_close(DSK_DRIVER *self);
 dsk_err_t myz80_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
@@ -48,3 +49,8 @@ dsk_err_t myz80_xseek(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
 dsk_err_t myz80_status(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
                       dsk_phead_t head, unsigned char *result);
 
+/* Convert to LDBS format. */
+dsk_err_t myz80_to_ldbs(DSK_DRIVER *self, struct ldbs **result, DSK_GEOMETRY *geom);
+
+/* Convert from LDBS format. */
+dsk_err_t myz80_from_ldbs(DSK_DRIVER *self, struct ldbs *source, DSK_GEOMETRY *geom);

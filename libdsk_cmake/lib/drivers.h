@@ -26,7 +26,9 @@
 extern DRV_CLASS dc_cpcemu;	/* CPCEMU DSK driver */
 extern DRV_CLASS dc_cpcext;	/* CPCEMU DSK driver: create in ext. format */
 extern DRV_CLASS dc_dqk;	/* Compressed CPCEMU driver */
-extern DRV_CLASS dc_posix;	/* POSIX driver */
+extern DRV_CLASS dc_posixalt;	/* POSIX driver (alternate sides) */
+extern DRV_CLASS dc_posixoo;	/* POSIX driver (out & out) */
+extern DRV_CLASS dc_posixob;	/* POSIX driver (out * back) */
 extern DRV_CLASS dc_nwasp;	/* NanoWasp driver */
 extern DRV_CLASS dc_myz80;	/* MYZ80 driver */
 extern DRV_CLASS dc_cfi;	/* CFI driver */
@@ -36,11 +38,18 @@ extern DRV_CLASS dc_jv3;	/* JV3 TRS-80 driver */
 extern DRV_CLASS dc_qm;		/* CopyQM driver */
 extern DRV_CLASS dc_tele;	/* Teledisk driver */
 extern DRV_CLASS dc_dskf;	/* LoadDskF driver */
+extern DRV_CLASS dc_qrst;	/* Compaq Quick Release Sector Transfer */
 extern DRV_CLASS dc_ydsk;	/* YAZE YDSK driver */
 extern DRV_CLASS dc_simh;	/* SIMH Altair driver */
 extern DRV_CLASS dc_logical;	/* Raw, in logical sector order */
+extern DRV_CLASS dc_ldbsdisk;	/* LibDsk block store */
+extern DRV_CLASS dc_ldbstext;	/* LDBS rendered as text */
+extern DRV_CLASS dc_sap;	/* Thomson SAP */
 extern DRV_CLASS dc_rcpmfs;	/* Reverse-CP/MFS driver */
 // extern DRV_CLASS dc_remote;	/* All remote drivers */
+extern DRV_CLASS dc_gotek1440;	/* Gotek USB device (1.4Mb disc images) */
+extern DRV_CLASS dc_gotek720;	/* Gotek USB device (720k disc images) */
+extern DRV_CLASS dc_dc42;	/* Apple DiskCopy 4.2 */
 #ifdef LINUXFLOPPY
 extern DRV_CLASS dc_linux;	/* Linux driver */
 #endif

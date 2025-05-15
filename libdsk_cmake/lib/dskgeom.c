@@ -1,7 +1,7 @@
 /***************************************************************************
  *                                                                         *
  *    LIBDSK: General floppy and diskimage access library                  *
- *    Copyright (C) 2001  John Elliott <seasip.webmaster@gmail.com>            *
+ *    Copyright (C) 2001, 2017  John Elliott <seasip.webmaster@gmail.com>  *
  *                                                                         *
  *    This library is free software; you can redistribute it and/or        *
  *    modify it under the terms of the GNU Library General Public          *
@@ -51,6 +51,33 @@ static void set_dos_fs(DSK_DRIVER *self, DSK_GEOMETRY *geom, unsigned char *bpb)
 	dsk_isetoption(self, "FS:FAT:SECFAT",     bpb[11] + 256 * bpb[12], 1);
 }
 
+/* We have detected an HFS / MFS superblock. Parse it for filesystem info.
+ * NOTE: This is currently very incomplete */
+static void set_hfs_fs(DSK_DRIVER *self, DSK_GEOMETRY *geom, 
+						const unsigned char *mdb)
+{
+	unsigned long blocks;
+	unsigned long blocksize;
+	int mfs = (mdb[0] == 0xD2 && mdb[1] == 0xD7);	/* HFS magic */
+	int hfs = (mdb[0] == 0x42 && mdb[1] == 0x44);	/* MFS magic */
+
+	blocks    = (((unsigned long)mdb[0x12]) << 8) | mdb[0x13];
+	blocksize = (((unsigned long)mdb[0x14]) << 24) | 
+		    (((unsigned long)mdb[0x15]) << 16) |
+		    (((unsigned long)mdb[0x16]) << 8)  | mdb[0x17];
+
+	if (hfs)
+	{
+		dsk_isetoption(self, "FS:HFS:BLOCKS", blocks, 1);
+		dsk_isetoption(self, "FS:HFS:BLOCKSIZE", blocksize, 1);
+	}
+	else if (mfs)
+	{
+		dsk_isetoption(self, "FS:MFS:BLOCKS", blocks, 1);
+		dsk_isetoption(self, "FS:MFS:BLOCKSIZE", blocksize, 1);
+	}
+}
+
 /* We have detected a PCW superblock. Parse it for CP/M filesystem info */
 static void set_pcw_fs(DSK_DRIVER *self, DSK_GEOMETRY *geom, unsigned char *buf)
 {
@@ -67,8 +94,8 @@ static void set_pcw_fs(DSK_DRIVER *self, DSK_GEOMETRY *geom, unsigned char *buf)
 	if (buf[0] == 0xE5)
 		buf = boot_pcw180;
 	bsh = buf[6];
-	blocksize = 128 << bsh;
-	secsize   = 128 << buf[4];
+	blocksize = dsk_expand_psh(bsh);
+	secsize   = dsk_expand_psh(buf[4]);
 	dirblocks = buf[7];
 	drm = dirblocks * (blocksize / 32);
 	off = buf[5];
@@ -167,6 +194,14 @@ static void set_fixed_fs(DSK_DRIVER *self, dsk_format_t fmt)
 	}
 }
 
+/* We have detected an Acorn DFS master directory. */
+static void set_dfs_fs(DSK_DRIVER *self, DSK_GEOMETRY *geom, 
+			unsigned char *sector1)
+{
+	unsigned sectors = ((sector1[6] & 3) << 8) | sector1[7];
+
+	dsk_isetoption(self, "FS:DFS:SECTORS", sectors, 1);
+}
 
 
 
@@ -186,6 +221,7 @@ LDPUBLIC32 dsk_err_t LDPUBLIC16 dsk_getgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom
 	dc = self->dr_class; 
 	memset(geom, 0, sizeof(*geom));
 
+	WALK_VTABLE(dc, dc_getgeom)
 	if (dc->dc_getgeom)
 	{
 		e = (dc->dc_getgeom)(self, geom);
@@ -204,6 +240,7 @@ dsk_err_t dsk_defgetgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom)
 	unsigned char *secbuf;
 	unsigned long dsksize;
 	dsk_rate_t oldrate;
+	unsigned bootsecsize = 0;
 
         if (!self || !geom || !self->dr_class) return DSK_ERR_BADPTR;
 
@@ -215,6 +252,7 @@ dsk_err_t dsk_defgetgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom)
 	/* Allocate buffer for boot sector (512 bytes) */
 	secbuf = dsk_malloc(geom->dg_secsize);
 	if (!secbuf) return DSK_ERR_NOMEM;
+	bootsecsize = geom->dg_secsize;
 
 
 	/* Check for CPC6128 type discs. Also probe the data rate; if we get a 
@@ -273,15 +311,13 @@ dsk_err_t dsk_defgetgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom)
 			/* BBC Micro FM floppy? */
 			if ((geom->dg_fm & RECMODE_MASK) == RECMODE_FM)
 			{
-				unsigned int tot_sectors;
-				e = dsk_lread(self, geom, secbuf, 1);
-
-				tot_sectors = secbuf[7] + 256 * (secbuf[6] & 3);
-			
-/* If disc is FM recorded but does not have 400 or 800 sectors, fail. */	
-				if (e == DSK_ERR_OK && tot_sectors != 400 && tot_sectors != 800) e = DSK_ERR_BADFMT; 
-
-				geom->dg_cylinders = tot_sectors / (geom->dg_heads * geom->dg_sectors);	
+/* Load the first two sectors */
+				e = dsk_lread(self, geom, secbuf, 0);
+				if (!e) e = dsk_lread(self, geom, 
+							secbuf + 256, 1);
+				if (!e) e = dg_dfsgeom(geom, secbuf, 
+						secbuf + 256);
+				if (!e) set_dfs_fs(self, geom, secbuf + 256);
 				dsk_free(secbuf);
 				return e;
 			}
@@ -333,6 +369,7 @@ dsk_err_t dsk_defgetgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom)
 			/* Allocate buffer for boot sector (1k bytes) */
 			secbuf = dsk_malloc(geom->dg_secsize);
 			if (!secbuf) return DSK_ERR_NOMEM;
+			bootsecsize = geom->dg_secsize;
 			e = dsk_lread(self, geom, secbuf, 0);
 			if (!e)
 			{
@@ -392,11 +429,26 @@ dsk_err_t dsk_defgetgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom)
 		dsk_free(secbuf);
 		return e; 
 	}
-
-	/* Save the data rate, because what we have is right, and what's
-	 * in the sector might not be. */
 	oldrate = geom->dg_datarate;	
 	/* We have the sector. Let's try to guess what it is */
+	if (geom->dg_secsize == 512 && dg_ismacboot(secbuf))
+	{
+		unsigned char secbuf2[512];
+		/* This looks awfully like an Apple HFS or MFS boot 
+		 * sector. See if we can load and parse the superblock. */
+		e = dsk_lread(self, geom, secbuf2, 2);
+		if (e == DSK_ERR_OK)
+		{
+			if (!dg_hfsgeom(geom, secbuf2))
+			{
+				set_hfs_fs(self, geom, secbuf2);
+				dsk_free(secbuf);
+				return DSK_ERR_OK; 
+			}
+		}
+		/* No HFS / MFS superblock found. */
+	}
+
 	e = dg_dosgeom(geom, secbuf);	
 	if (e == DSK_ERR_OK)
 	{
@@ -417,23 +469,114 @@ dsk_err_t dsk_defgetgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom)
 			set_dos_fs(self, geom, secbuf + 80);
 		}
 	}
-	if (e == DSK_ERR_BADFMT) 
-	{
-		e = dg_cpm86geom(geom, secbuf);
-		if (e == DSK_ERR_OK)
-			set_cpm86_fs(self, geom, secbuf);
-	}
-/* Check for Oups Discovery 1 */
+/* Check for Opus Discovery 1 */
 	if (e == DSK_ERR_BADFMT) 
 	{
 		e = dg_opusgeom(geom, secbuf);
 /*		if (e == DSK_ERR_OK)
 			set_opus_fs(self, geom, secbuf); */
 	}
-	geom->dg_datarate = oldrate;
-	
+/* The DFS check is now more comprehensive, so put it before the CP/M-86 one */
+	if (e == DSK_ERR_BADFMT)
+	{
+		e = dg_dfsgeom(geom, secbuf, secbuf + 256);
+		if (e == DSK_ERR_OK)
+			set_dfs_fs(self, geom, secbuf + 256);
+	}
+	if (e == DSK_ERR_BADFMT) 
+	{
+		e = dg_cpm86geom(geom, secbuf);
+		if (e == DSK_ERR_OK)
+			set_cpm86_fs(self, geom, secbuf);
+	}
+
+	/* [1.5.6] If we are reading a floppy, LDBS file, DSK file or 
+	 * anything with metadata, then the data rate used to read the
+	 * boot sector will be the correct one. If, however, we are reading 
+	 * something like a POSIX file with no metadata, then the read will
+	 * have succeeded with the default RATE_SD and the rate specified by
+	 * the boot sector is a better indication of the proper value.
+	 *
+	 * So, try rereading the boot sector using the rate determined from
+	 * the boot sector. If that succeeds, all well and good. If not, 
+	 * revert to the rate when the boot sector was initially read */
+	if (oldrate != geom->dg_datarate && geom->dg_secsize <= bootsecsize)
+	{
+		dsk_err_t err2;
+
+		/* Try to reread the sector. */
+		err2 = dsk_lread(self, geom, secbuf, 0);
+		/* If that failed, revert. */
+		if (err2 == DSK_ERR_NOADDR)
+		{
+			geom->dg_datarate = oldrate;
+		}
+	}	
 	dsk_free(secbuf);
 	return e;
+}
+
+
+/* This is a cut-down geometry probe for when all the probe has is the 
+ * boot sector, no metadata whatsoever.
+ *
+ * Since we have no metadata, we don't know what the size of the boot 
+ * sector is (reading 512 bytes from the file could net you one 512-byte 
+ * sector, two 256-byte sectors or half a 1k sector). All we have to go on
+ * is the content.
+ *
+ * Boot sectors are listed in approximate order of detectability. 
+ * */
+LDPUBLIC32 dsk_err_t LDPUBLIC16 dg_bootsecgeom(DSK_GEOMETRY *geom, 
+				const unsigned char *secbuf)
+{
+	unsigned long dsksize;
+
+	/* Try for a DOS BPB */
+	dsk_err_t err = dg_dosgeom(geom, secbuf);	
+	
+	if (err != DSK_ERR_BADFMT) return err;
+
+	/* Try for PCW CP/M */
+	err = dg_pcwgeom(geom, secbuf);
+	if (err != DSK_ERR_BADFMT) return err;
+
+	/* Try for Apricot DOS */
+	err = dg_aprigeom(geom, secbuf);
+	if (err != DSK_ERR_BADFMT) return err;
+
+	/* Try for ADFS. With no metadata, a file is as likely to be an ADFS
+	* disc with 256-byte sectors as a DOS disc with 512-byte sectors, 
+	* after all. Use the disk size at offset 0xFC. */
+	dsksize = secbuf[0xFC] + 256 * secbuf[0xFD] + 65536L * secbuf[0xFE];
+	switch (dsksize)
+	{
+		case  640: return dg_stdformat(geom, FMT_ACORN160, NULL, NULL);
+		case 1280: return dg_stdformat(geom, FMT_ACORN320, NULL, NULL);
+		/* The DOS Plus boot floppy has 2720 here for some reason */
+		case 2720:
+		case 2560: return dg_stdformat(geom, FMT_ACORN640, NULL, NULL);
+		case 3200: return dg_stdformat(geom, FMT_ACORN800, NULL, NULL);
+	}
+	/* ADFS E has a different signature */
+	if (secbuf[4] == 10 && secbuf[5] == 5 &&
+	    secbuf[6] == 2  && secbuf[7] == 2)
+	{
+		return dg_stdformat(geom, FMT_ACORN800, NULL, NULL);
+	}
+/* The DFS check is now more comprehensive, so put it before the CP/M-86 one */
+	err = dg_dfsgeom(geom, secbuf, secbuf + 256);
+	if (err != DSK_ERR_BADFMT) return err;
+
+	err = dg_cpm86geom(geom, secbuf);
+	if (err != DSK_ERR_BADFMT) return err;
+
+	/* Check for Opus Discovery 1 */
+	err = dg_opusgeom(geom, secbuf);
+	if (err != DSK_ERR_BADFMT) return err;
+
+	/* OK, I give up */
+	return DSK_ERR_BADFMT;	
 }
 
 
@@ -537,7 +680,7 @@ LDPUBLIC32 dsk_err_t LDPUBLIC16 dg_pcwgeom(DSK_GEOMETRY *dg, const unsigned char
 	dg->dg_nomulti = 0;
 	dg->dg_rwgap   = bootsec[8];
 	dg->dg_fmtgap  = bootsec[9];
-	dg->dg_secsize = 128 << bootsec[4];
+	dg->dg_secsize = dsk_expand_psh(bootsec[4]);
 
 	return DSK_ERR_OK;
 }
@@ -575,7 +718,7 @@ LDPUBLIC32 dsk_err_t LDPUBLIC16 dg_aprigeom(DSK_GEOMETRY *self, const unsigned c
 
 	/* Sector size */
 	self->dg_secsize   = bootsect[0x0E] + 256 * bootsect[0x0F];
-	/* [1.4.2] If sector size is not a reasonable value, this
+	/* [1.4.1] If sector size is not a reasonable value, this
 	 *         could be a non-Apricot disk that happens to have
 	 *         ASCII at the start of the boot sector */
 	if ((self->dg_secsize % 128) || (self->dg_secsize == 0)) 
@@ -622,9 +765,163 @@ LDPUBLIC32 dsk_err_t LDPUBLIC16  dg_opusgeom(DSK_GEOMETRY *dg,
 	dg->dg_nomulti   = 0;
 	dg->dg_rwgap     = 0x2A;		/* XXX Provisional */
 	dg->dg_fmtgap    = 0x52;		/* XXX Provisional */
-	dg->dg_secsize   = 128 << bootsec[4];
+	dg->dg_secsize   = dsk_expand_psh(bootsec[4]);
 
 	return DSK_ERR_OK;
+}
+
+
+/* Interpret an Acorn DFS directory */
+
+/* Look at the first 2 sectors of a disc and see if it resembles the start 
+ * of an Acorn DFS filesystem. Uses the validation method given at 
+ * <http://beebwiki.mdfs.net/index.php/Acorn_DFS_disc_format> 
+ *
+ * Returns the number of sectors in the filesystem if the file is possibly
+ * a valid DFS image, 0 if the file is not.
+ */
+LDPUBLIC32 dsk_err_t LDPUBLIC16 dg_dfsgeom(DSK_GEOMETRY *geom, 
+	const unsigned char *sector0, const unsigned char *sector1)
+{
+	int n, m, files;
+	unsigned char label[12];
+	unsigned tot_sectors;
+	dsk_err_t err;
+
+	/* Check that all bytes of the disc label are 0x20-0x7E or zero */
+	memcpy(label, sector0, 8);
+	memcpy(label + 8, sector1, 4);
+	for (n = 0; n < 12; n++) 
+	{
+		if (label[n] >= 0x7F) return DSK_ERR_BADFMT;
+		if (label[n] > 0 && label[n] < 0x1F) return DSK_ERR_BADFMT;
+	}
+	/* Check that the disc descriptor is valid */
+	if (sector1[5] & 7) return DSK_ERR_BADFMT;	
+	if (sector1[6] & 0xCC) return DSK_ERR_BADFMT;
+	files = sector1[5] >> 3;
+	tot_sectors = ((sector1[6] & 3) << 8) | sector1[7];
+	if (tot_sectors < 2 || tot_sectors > 800) return DSK_ERR_BADFMT;
+	/* Check each filename entry */
+	for (n = 0; n < files; n++)
+	{
+		const unsigned char *filename = sector0 + 8 * (n + 1);
+		const unsigned char *data = sector1 + 8 * (n + 1);
+		unsigned long length, startlba, lenlba;
+	       
+		length   = data[4] + 256 * data[5] + 65536 * ((data[6] >> 4) & 3);
+		startlba = data[7] + 256 * (data[6] & 3);
+		lenlba   = (length + 255) / 256;		
+
+		/* Check filename character set */
+		for (m = 0; m < 8; m++)
+		{
+			unsigned char ch = filename[m];
+			if (m == 7) ch &= 0x7F;	/* Ignore lock bit */
+
+			if (ch < 0x20 || ch > 0x7E || ch == '.' || ch == ':' ||
+			    ch == '"' || ch == '#' || ch == '*') return DSK_ERR_BADFMT;
+		}
+		/* Compare filename to previous filenames to check 
+		 * that it's unique */
+		for (m = 0; m < (n - 1); m++)
+		{
+			const unsigned char *other = sector0 + 8 * (m + 1);
+
+			if ((other[7] & 0x7F) == (filename[7] & 0x7F) &&
+			    !memcmp(filename, other, 7))
+			{
+				return DSK_ERR_BADFMT;
+			}
+		}
+		/* Check that file is within the filesystem */
+		if (startlba < 2 || startlba + lenlba > tot_sectors) return DSK_ERR_BADFMT;
+		/* Check that the file does not overlap the previous
+		 * file in the catalogue */
+		if (n > 0 && length > 0)
+		{
+			unsigned long startlba2 = data[-1] + 256 * (data[-2] & 3);
+			if (startlba >= startlba2) return DSK_ERR_BADFMT;
+			if (startlba + lenlba > startlba2) return DSK_ERR_BADFMT;
+		}	
+	}
+	if (tot_sectors <= 400)
+	{
+		err = dg_stdformat(geom, FMT_BBC100, NULL, NULL);
+	}
+	else
+	{
+		err = dg_stdformat(geom, FMT_BBC200, NULL, NULL);
+	}
+	if (!err)
+	{
+		geom->dg_cylinders = tot_sectors / (geom->dg_heads * geom->dg_sectors);
+	}
+	return err;
+}
+
+
+/* Interpret a Mac HFS superblock (LBA 2) */
+LDPUBLIC32 dsk_err_t LDPUBLIC16 dg_hfsgeom(DSK_GEOMETRY *self, const unsigned char *mdb)
+{
+	unsigned long blocks;
+	unsigned long blocksize;
+	dsk_err_t err = DSK_ERR_BADFMT;
+	int mfs = (mdb[0] == 0xD2 && mdb[1] == 0xD7);	/* HFS magic */
+	int hfs = (mdb[0] == 0x42 && mdb[1] == 0x44);	/* MFS magic */
+
+	/* Check magic */
+	if (mfs || hfs)
+	{
+		blocks    = (((unsigned long)mdb[0x12]) << 8) | mdb[0x13];
+		blocksize = (((unsigned long)mdb[0x14]) << 24) | 
+			    (((unsigned long)mdb[0x15]) << 16) |
+			    (((unsigned long)mdb[0x16]) << 8)  | mdb[0x17];
+
+		/* 1.4M filesystem */
+		if (blocks > 1594 && blocks <= 2874 && blocksize == 512)
+		{
+			err = dg_stdformat(self, FMT_1440K, NULL, NULL);
+		}
+		/* This will detect MFS 400k and HFS 800k respectively. But
+		 * that means opening something of a can of worms: LibDsk
+		 * would need support for the Apple GCR encoding, the 12 
+		 * bytes of tag data for each sector, and so on. DSK_GEOMETRY
+		 * would also need to gain the concept of multiple zones each
+		 * with its own geometry, or special-case the Mac variable 
+		 * rate. Without this, the best that I can do is provide
+		 * a geometry based on the maximum number of sectors and 
+		 * rely on the calling code to cope. */
+		else if (blocks <= 391 && blocksize == 1024)	// MFS 400k
+		{
+			err = dg_stdformat(self, FMT_MAC400, NULL, NULL);
+		}
+		else if (blocks <= 1594 && blocksize == 512)	// HFS 800k
+		{
+			err = dg_stdformat(self, FMT_MAC800, NULL, NULL);
+		}	
+	}
+	return err;
+}
+
+
+int dg_ismacboot(const unsigned char *secbuf)
+{
+	return (secbuf[0] == 0x4C && secbuf[1] == 0x4B && secbuf[2] == 0x60 &&
+	    secbuf[3] == 0x00 && secbuf[4] == 0x00 && 
+	    (secbuf[5] == 0x86 || secbuf[5] == 0x84));
+}
+
+
+/* For a Mac variable-speed drive, how many sectors would you expect to
+ * find on each track? */
+int dg_macspt(dsk_pcyl_t cylinder)
+{
+	if (cylinder < 16) return 12;
+	if (cylinder < 32) return 11;
+	if (cylinder < 48) return 10;
+	if (cylinder < 64) return 9;
+	return 8;
 }
 
 

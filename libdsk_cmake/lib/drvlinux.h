@@ -36,7 +36,7 @@ typedef struct
 	unsigned char lx_status[4];
 } LINUX_DSK_DRIVER;
 
-dsk_err_t linux_open(DSK_DRIVER *self, const char *filename);
+dsk_err_t linux_open(DSK_DRIVER *self, const char *filename, DSK_REPORTFUNC diagfunc);
 dsk_err_t linux_creat(DSK_DRIVER *self, const char *filename);
 dsk_err_t linux_close(DSK_DRIVER *self);
 dsk_err_t linux_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,

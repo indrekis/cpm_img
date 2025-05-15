@@ -9,6 +9,7 @@
 *
 */
 
+// https://www.fltk.org/doc-1.3/classFl__Choice.html#a7fd57948259f7f6c17b26d7151b0afef
 
 #include <ctype.h>
 #include <errno.h>
@@ -34,6 +35,7 @@
 #include <new>
 #include <memory>
 #include <exception>
+#include <stdexcept>
 #include <cstddef>
 #include <vector>
 #include <algorithm>
@@ -51,6 +53,9 @@
 #include <FL/Fl_Button.H>
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Double_Window.H>
+#include <FL/Fl_Text_Display.H>
+
+#include "Fl_Flow/Fl_Flow.h"
 #endif
 
 using std::nothrow, std::uint8_t;
@@ -101,11 +106,11 @@ bool set_file_attributes_cpm(const char* filename, uint32_t attribute) {
 	return set_file_attributes(filename, cpm_attr_to_tcmd_attr(attribute)); // Codes are equal
 }
 
-class disk_err_t : public std::exception {
+class disk_err_t : public std::runtime_error {
 	int err_code = 0;
 public: 
 	disk_err_t(const char* descr, int err_code_in):
-		std::exception{ descr }, err_code{ err_code_in }{
+		std::runtime_error{ descr }, err_code{ err_code_in }{
 	}
 	int get_err_code() const { return err_code; }
 };
@@ -180,17 +185,16 @@ private:
 		{
 			hArchFile = file_handle_t();
 			throw disk_err_t{ "Error opening archive file.", E_EOPEN };
-		} else if( !read_only ){
-			//! Hack as for now 
-			close_file(hArchFile);
-			hArchFile = file_handle_t();
 		}
+		close_file(hArchFile);
+		hArchFile = file_handle_t();
 
 		const char* errs = Device_open(&super.dev, archname.data(), read_only ? O_RDONLY : O_RDWR,
 			driver_name.empty() ? nullptr : driver_name.c_str());
 
 		if (errs) // Pointer to error string 
 		{
+			close_file(hArchFile);
 			plugin_config.log_print("\n\nError# Failed opening file: %s", errs);
 			throw disk_err_t{ "Error in Device_open.", E_EOPEN };
 		}
@@ -199,15 +203,23 @@ private:
 			use_uppercase);
 		if (erri == -1)
 		{
+			close_file(hArchFile);
 			plugin_config.log_print("\n\nError# Failed reading superblock.");
 #ifdef FLTK_ENABLED_EXPERIMENTAL
 			while (true) {
 				Fl_Choice* choice;
-				win = new Fl_Double_Window(400, 200, "Choose image format");
+				win = new Fl_Double_Window(400, 300, "Choose image format");
 				win->begin();
 
-				// Good, assigns to the global `choice`, so it won't be NULL when but_cb is called
-				choice = new Fl_Choice(70, 10, 200, 50, "Format");
+				//! https://github.com/osen/Fl_Flow
+				Fl_Flow* flow = new Fl_Flow{ 0, 0, win->w(), win->h() };
+				// See also: https://www.fltk.org/doc-1.4/coordinates.html#coordinates_pack
+				// https://www.fltk.org/doc-1.4/classFl__Tile.html
+				// https://github.com/osen/FL_Flex
+				
+				Fl_Box* title = new Fl_Box(0, 0, 200, 50, "Failed to open image.");
+				// Fl_Box* sep = new Fl_Box(0, 0, 200, 50, "Select format:");
+				choice = new Fl_Choice(0, 0, 200, 50, "Select format:" );
 
 				choice->add("osb1sssd");
 				choice->add("osbexec1");
@@ -216,12 +228,21 @@ private:
 
 				info_widget = choice;
 
-				Fl_Button* butOK = new Fl_Button(10, 150, 80, 30, "OK");       
+				Fl_Button* butOK = new Fl_Button(0, 0, 80, 30, "OK");       
 				// butOK->when(0);
-				Fl_Button* butCn = new Fl_Button(100, 150, 80, 30, "Cancel");  
+				Fl_Button* butCn = new Fl_Button(0, 0, 80, 30, "Cancel");  
 				butOK->callback((Fl_Callback*)(format_select_OK_callback), this);
 				butCn->callback((Fl_Callback*)(format_select_cancel_callback), this);
-
+								
+				win->resizable(flow);
+				flow->rule(title, "^=<");
+				//flow->rule(sep, "<^");
+				flow->rule(choice, "^=>");
+				flow->rule(butCn, "v<");
+				// flow->rule(butCn2, "v<");
+				flow->rule(butOK, "v>");
+				
+				// win->end();
 				win->show();
 				Fl::run();
 				// auto is_OK_Pressed = butOK->changed();
@@ -315,13 +336,15 @@ extern "C" {
 					return E_END_ARCHIVE;
 			}
 
+			// TODO: support for the [passwd] [label] names 
+			// TODO: cpmNamei sometimes returns error code. Example: COB1A.IMD/SQUARO -- some extents error.
+			//       then the struct is filled with void values.
 			cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
 
 			strcpy(HeaderData->ArcName, hArcData->archname.data());
 
 			if (hArcData->users_counter == 0)
 			{
-				
 				strcpy(HeaderData->FileName, dirent_raw_ptr + 2);
 			}
 			else {
@@ -380,12 +403,8 @@ extern "C" {
 		auto root_ino = &hArcData->root;
 		cpmInode file_ino;
 		auto dirent_raw_ptr = hArcData->gargv[hArcData->curren_file_counter - 1];
-		cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
-
-        auto buf = std::make_unique<char[]>(file_ino.size);
-		// std::unique_ptr<char[]> buf{ new char[file_ino.size] };
-		cpmOpen(&file_ino, &file, O_RDONLY);
-		auto rres = cpmRead(&file, buf.get(), file_ino.size);
+		auto nres = cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
+		// If we got this far, for errors different than E_ECREATE, TCmd expects file shold exist
 		if (Operation == PK_TEST) {
 			hUnpFile = open_file_overwrite(dest);
 		}
@@ -394,6 +413,26 @@ extern "C" {
 		}
 		if (hUnpFile == file_open_error_v)
 			return E_ECREATE;
+
+		if (nres == -1) { // In fact, already dangerous...
+			// TCmd крашитьс€ тут, €кщо повторно, не виход€чи з арх≥ва, знову спробувати прочитати файл. 
+			// але достатньо вийти-зайти -- очищати кеш, заход€чи в ≥нший арх≥в, не потр≥бно...
+			plugin_config.log_print("\n\nError# Failed opening file %s in archive %s in ProcessFile/cpmNamei",
+				dirent_raw_ptr, hArcData->archname);
+			close_file(hUnpFile);
+			return E_BAD_DATA;
+		}
+        auto buf = std::make_unique<char[]>(file_ino.size);
+		// std::unique_ptr<char[]> buf{ new char[file_ino.size] };
+		auto ores = cpmOpen(&file_ino, &file, O_RDONLY);
+		if (ores == -1) {
+			plugin_config.log_print("\n\nError# Failed opening file %s in archive %s in ProcessFile/cpmOpen",
+				dirent_raw_ptr, hArcData->archname);
+			close_file(hUnpFile);
+			return E_BAD_DATA;
+		}
+		auto rres = cpmRead(&file, buf.get(), file_ino.size);
+
 		write_file(hUnpFile, buf.get(), file_ino.size);
 
 		if(file_ino.mtime != 0 )

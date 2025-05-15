@@ -33,7 +33,7 @@ typedef struct
 	unsigned char  dskf_header[40];
 } DSKF_DSK_DRIVER;
 
-dsk_err_t dskf_open(DSK_DRIVER *self, const char *filename);
+dsk_err_t dskf_open(DSK_DRIVER *self, const char *filename, DSK_REPORTFUNC diagfunc);
 dsk_err_t dskf_creat(DSK_DRIVER *self, const char *filename);
 dsk_err_t dskf_close(DSK_DRIVER *self);
 dsk_err_t dskf_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,

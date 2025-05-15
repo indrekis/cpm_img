@@ -29,6 +29,10 @@
 #include "libdsk.h"
 #include "drv.h"
 
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
+
 #ifdef HAVE_LIMITS_H
 # include <limits.h>
 #endif
@@ -37,10 +41,9 @@
 # include <assert.h>
 #endif
 
-#ifndef PATH_MAX
-#define PATH_MAX FILENAME_MAX
-#endif 
-
+#ifdef HAVE_WINDOWS_H 
+# include <windows.h>
+#endif
 
 #ifndef DISABLE_FLOPPY
 # ifdef HAVE_LINUX_FD_H
@@ -48,12 +51,15 @@
 #  ifdef HAVE_LINUX_FDREG_H
 #   define LINUXFLOPPY 
 #   include "linux/fdreg.h"
+#   ifdef MAJOR_IN_MKDEV
+#    include <sys/mkdev.h>
+#   endif
+#   ifdef MAJOR_IN_SYSMACROS
+#    include <sys/sysmacros.h>
+#   endif
 #  endif
 # endif
 
-# ifdef HAVE_WINDOWS_H 
-#  include <windows.h>
-# endif
 
 #ifdef HAVE_WINIOCTL_H
 #  define WIN32FLOPPY 
@@ -61,6 +67,10 @@
 #  include <winioctl.h>
 # endif
 #endif
+
+#ifndef PATH_MAX
+#define PATH_MAX FILENAME_MAX
+#endif 
 
 /* See if we have any floppy drivers that take parameters of the form A: */
 #ifdef WIN32FLOPPY 
@@ -98,6 +108,16 @@ dsk_err_t dsk_defgetgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom);
 dsk_err_t dsk_isetoption(DSK_DRIVER *self, const char *name, int value, 
 		int add_if_not_present);
 
+/* A mini-geometry probe, intended for disc images that don't have 
+ * built-in metadata. It looks at the first sector and tries to guess 
+ * what the geometry of the image might be. */
+LDPUBLIC32 dsk_err_t  LDPUBLIC16 dg_bootsecgeom(DSK_GEOMETRY *self, const unsigned char *bootsect);
+
+/* Does the passed boot sector look like a Mac boot sector? */
+int dg_ismacboot(const unsigned char *bootsect);
+/* How many sectors would a Mac put on this track? */
+int dg_macspt(dsk_pcyl_t cylinder);
+
 
 /* "Extended surface" discs have sector IDs that don't match the sectors' 
  * location on disc. This means, anywhere we reflect dsk_read() to dsk_xread(),
@@ -107,6 +127,43 @@ dsk_err_t dsk_isetoption(DSK_DRIVER *self, const char *name, int value,
 dsk_phead_t dg_x_head  (const DSK_GEOMETRY *dg, dsk_phead_t h);
 dsk_psect_t dg_x_sector(const DSK_GEOMETRY *dg, dsk_phead_t h, dsk_psect_t s);
 
+/* Translation between UTF-8 (as used by LibDsk in LDBS) and codepage 437
+ * (as used by QRST, ApriDisk etc.) 
+ */
+
+/* Convert a CP437 string to UTF-8. Returns the number of UTF-8 bytes 
+ * generated. If 'dst' is not null, the string is written to 'dst'. 
+ * 
+ * If 'limit' is >= 0, it is the maximum size of the output buffer 
+ * (including the terminating null) */
+int cp437_to_utf8(const char *src, char *dst, int limit);
+
+/* Convert a UTF-8 string to CP437. Returns the number of CP437 bytes
+ * generated. Characters outside the CP437 range get replaced with 0xFF. 
+ * If 'dst' is not null, the string is written to 'dst'.
+ * 
+ * If 'limit' is >= 0, it is the maximum size of the output buffer 
+ * (including the terminating null) */
+int utf8_to_cp437(const char *src, char *dst, int limit);
+
+/* Equivalents for MacRoman */
+int macroman_to_utf8(const char *src, char *dst, int limit);
+int utf8_to_macroman(const char *src, char *dst, int limit);
+
+
+/* Diagnostic helper function: Hex dump a range of bytes */
+void diaghex(DSK_REPORTFUNC diagfunc, unsigned long offset, unsigned char *buf, 
+		size_t len, const char *fmt, ...);
+/* Diagnostic helper function: Header */
+void diaghead(DSK_REPORTFUNC diagfunc, const char *fmt, ...);
+/* Diagnostic helper function: Blank line */
+void diagnl(DSK_REPORTFUNC diagfunc);
+/* Diagnostic helper function: Hex dump range of file
+ * (pass count = -1 to dump to EOF) */
+void diagrawrange(DSK_REPORTFUNC diagfunc, FILE *fp, long fpos, long count,
+		const char *caption);
+#define diagraw(func, fp, caption) \
+	diagrawrange(func, fp, 0, -1, caption)
 
 #ifdef AUTOSHARE
 # define Q2(x) Q1(x)

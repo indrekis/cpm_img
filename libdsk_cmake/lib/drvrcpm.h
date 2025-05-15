@@ -30,12 +30,6 @@
  * The sectors are buffered in a singly-linked list.
  */ 
 
-#include <limits.h> // For PATH_MAX
-
-#ifndef PATH_MAX
-#define PATH_MAX FILENAME_MAX
-#endif 
-
 typedef struct rcpmfs_buffer
 {
 	struct rcpmfs_buffer *rcb_next;
@@ -80,7 +74,7 @@ typedef struct
 #define FSVERSION_ISX  (-2)
 
 
-dsk_err_t rcpmfs_open(DSK_DRIVER *self, const char *filename);
+dsk_err_t rcpmfs_open(DSK_DRIVER *self, const char *filename, DSK_REPORTFUNC diagfunc);
 dsk_err_t rcpmfs_creat(DSK_DRIVER *self, const char *filename);
 dsk_err_t rcpmfs_close(DSK_DRIVER *self);
 dsk_err_t rcpmfs_getgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom);

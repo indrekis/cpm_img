@@ -35,7 +35,7 @@ typedef struct
 } INT25_DSK_DRIVER;
 
 
-dsk_err_t int25_open(DSK_DRIVER *self, const char *filename);
+dsk_err_t int25_open(DSK_DRIVER *self, const char *filename, DSK_REPORTFUNC diagfunc);
 dsk_err_t int25_creat(DSK_DRIVER *self, const char *filename);
 dsk_err_t int25_close(DSK_DRIVER *self);
 dsk_err_t int25_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,

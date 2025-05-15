@@ -31,7 +31,8 @@
 DRV_CLASS dc_remote =
 {
 	sizeof(DSK_DRIVER),	/* [deliberately] No extra data */
-	"remote",
+	NULL,		/* superclass */
+	"remote\0",
 	"Remote LibDsk instance",
 	remote_open,
 	remote_creat,
@@ -146,7 +147,8 @@ static dsk_err_t remote_lookup(DSK_DRIVER *self, const char *filename,
 	return DSK_ERR_NOTME;
 }
 
-dsk_err_t remote_open(DSK_DRIVER *self, const char *filename)
+dsk_err_t remote_open(DSK_DRIVER *self, const char *filename,
+	DSK_REPORTFUNC diagfunc)
 {
 	RPCFUNC function;
 	char *outname, *outtype, *outcomp, *comment;

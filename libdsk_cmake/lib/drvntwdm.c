@@ -36,7 +36,8 @@ static DWORD dwRet;
 DRV_CLASS dc_ntwdm = 
 {
 	sizeof(NTWDM_DSK_DRIVER),
-	"ntwdm",
+	NULL,		/* superclass */
+	"ntwdm\0",
 	"NT WDM floppy driver",
 	&ntwdm_open,	/* open */
 	&ntwdm_creat,	/* create new */
@@ -202,9 +203,10 @@ dsk_err_t ntwdm_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
                              void *buf, dsk_pcyl_t cylinder,
                               dsk_phead_t head, dsk_psect_t sector)
 {
+/* Don't dg_x_sector() here; if required it will have been done in dg_ls2ps() */
 	return ntwdm_xread(self, geom, buf, cylinder, head, cylinder, 
 			dg_x_head(geom, head), 
-			dg_x_sector(geom, head, sector), 
+			sector, 
 			geom->dg_secsize, 0);
 }
 
@@ -267,9 +269,10 @@ dsk_err_t ntwdm_write(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
                              const void *buf, dsk_pcyl_t cylinder,
                               dsk_phead_t head, dsk_psect_t sector)
 {
+/* Don't dg_x_sector() here; if required it will have been done in dg_ls2ps() */
 	return ntwdm_xwrite(self, geom, buf, cylinder, head, cylinder, 
 			dg_x_head(geom, head), 
-			dg_x_sector(geom, head, sector), 
+			sector, 
 			geom->dg_secsize, 0);
 }
 
@@ -422,7 +425,7 @@ dsk_err_t ntwdm_secid(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
 	result->fmt_cylinder = res.cyl;
 	result->fmt_head     = res.head;
 	result->fmt_sector   = res.sector;
-	result->fmt_secsize  = 128 << res.size;	
+	result->fmt_secsize  = dsk_expand_psh(res.size);	
 
 	return DSK_ERR_OK;
 }

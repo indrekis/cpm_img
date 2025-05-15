@@ -43,6 +43,8 @@
     &dc_dos32,
     &dc_dosint25,
 #endif
+    &dc_gotek1440,
+    &dc_gotek720,
 //    &dc_remote,
 /* 2. Directory-based backends */
 #ifdef HAVE_RCPMFS
@@ -60,22 +62,35 @@
 /*  &dc_dqk,     * Compressed .DSK - now subsumed by compression
                          * library. */
     &dc_adisk,  /* APRIDISK image */
+#ifndef WIN16    
     &dc_qm,     /* CopyQM */
     &dc_tele,	/* Teledisk */
+#endif
+    &dc_ldbsdisk, /* LibDsk block store */
+    &dc_ldbstext, /* LDBS in text format */
+    &dc_sap,	/* Thomson SAP */
+    &dc_qrst,	/* Compaq Quick Release Sector Transfer */
     &dc_imd,	/* IMAGEDISK IMD */
 /*  &dc_dskf,	   IBM LoadDskF */
     &dc_ydsk,	/* YAZE YDSK */
-
+   
 /* 4. Raw files with no magic number. */
-    &dc_posix,
-/* 5. Raw files that will never be selected automatically. For example, 
+    &dc_posixalt,
+    &dc_posixoo,
+    &dc_posixob,
+/* 5. Files that will never be selected automatically. For example, 
  *   the MYZ80 drive image cannot be reliably identified, so it must be 
  *   explicitly specified. */
     &dc_myz80,
     &dc_simh,
+/* For some reason building the nwasp driver crashes the Pacific C 
+ * compiler. Exclude it from DOS builds for now. */
+#ifndef __PACIFIC__
     &dc_nwasp,
+#endif
     &dc_logical,
     &dc_jv3,
+    &dc_dc42,
     &dc_cfi,    /* RLE-compressed raw. The reasons that this isn't 
              * handled by the general compression system are:
              * 1. No magic number, so can't autodetect.
