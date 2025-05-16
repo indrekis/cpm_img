@@ -312,6 +312,7 @@ dsk_err_t jv3_creat(DSK_DRIVER *s, const char *filename)
 	memset(self->jv3_header, 0xFF, JV3_HEADER_LEN);
 	if (fwrite(self->jv3_header, 1, JV3_HEADER_LEN, fp) < JV3_HEADER_LEN)
 	{
+        fclose(fp);
 		return DSK_ERR_SYSERR;
 	}
 	fclose(fp);

@@ -213,8 +213,8 @@ static dsk_err_t adisk_add_block(ADISK_DSK_DRIVER *self, FILE *fp, DSK_REPORTFUN
 		return DSK_ERR_OK;
 	}
 	buf = dsk_malloc(1 + rh.data_size);
-	buf[rh.data_size] = 0;
 	if (buf == NULL) return DSK_ERR_NOMEM;
+	buf[rh.data_size] = 0;
 
 	fpos = ftell(fp);
 	/* Try to load the payload. If that fails, bail out */
@@ -470,7 +470,7 @@ dsk_err_t adisk_creat(DSK_DRIVER *self, const char *filename)
 	if (err)
 	{
 		dsk_free(adiskself->adisk_filename);
-		fclose(fp);
+		// fclose(fp);
 		return err;
 	}
 	return ldbsdisk_attach(self);

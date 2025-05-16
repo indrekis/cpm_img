@@ -27,6 +27,8 @@
  *
  */
 
+#include <assert.h>
+
 #include "compi.h"
 #include "compqrst.h"
 #include "ldbs.h"	/* for ldbs_peek4 */
@@ -201,6 +203,7 @@ dsk_err_t qrst5_open(COMPRESS_DATA *self)
 		offset = ldbs_peek4(qrst5_self->header + 797);
 /* Write an old-style QRST header */
 		qrst5_self->header[795] = 0;
+        assert(qrst5_self->fp_out);
 		if (fwrite(qrst5_self->header, 1, 796, qrst5_self->fp_out) < 796)
 		{
 			err = DSK_ERR_SYSERR;			
@@ -208,6 +211,7 @@ dsk_err_t qrst5_open(COMPRESS_DATA *self)
 		if (!err) err = decompress(qrst5_self, offset);
 	}	
 	fclose(qrst5_self->fp_in);
+    assert(qrst5_self->fp_out);
 	if (qrst5_self->fp_out) fclose(qrst5_self->fp_out);
 /* This is a decompress-only driver, so set the read-only flag in the 
  * compression structure */

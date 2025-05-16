@@ -31,6 +31,8 @@
  *                      - Enable the provision of initial input to blast()
  */
 
+#include <assert.h>
+
 #include <stddef.h>             /* for NULL */
 #include <setjmp.h>             /* for setjmp(), longjmp(), and jmp_buf */
 #include "blast.h"              /* prototype for blast() */
@@ -393,7 +395,8 @@ int blast(blast_in infun, void *inhow, blast_out outfun, void *outhow,
     s.inhow = inhow;
     if (left != NULL && *left) {
         s.left = *left;
-        s.in = *in;
+        assert(in);
+        s.in = *in; //-V595
     }
     else
         s.left = 0;

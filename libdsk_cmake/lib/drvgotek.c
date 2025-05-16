@@ -387,9 +387,9 @@ dsk_err_t gotek_read(DSK_DRIVER *self, const DSK_GEOMETRY *geom,
 {
 	GOTEK_DSK_DRIVER *gxself;
 	unsigned long offset;
+	if (!buf || !self || !geom) return DSK_ERR_BADPTR;
 	size_t secsize = geom->dg_secsize;
 
-	if (!buf || !self || !geom) return DSK_ERR_BADPTR;
 	CHECK_CLASS(self);
 
 

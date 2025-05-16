@@ -768,6 +768,7 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
           {
             fprintf(stderr,"%s: invalid blocksize `%s' in line %d\n",cmd,argv[1],ln);
             // exit(1);
+            fclose(fp);
             // TODO: Fix error handling
             return -1;
           }
@@ -1089,9 +1090,7 @@ int cpmReadSuper(struct cpmSuperBlock *d, struct cpmInode *root, char const *for
   while (s_ifreg && !S_ISREG(s_ifreg)) s_ifreg<<=1;
   assert(s_ifreg);
 
-  int res; // This is a personal academic project. Dear PVS-Studio, please check it.
-// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
+  int res; 
   if (strcmp(format,"amstrad")==0) 
       res = amsReadSuper(d,format);
   else
@@ -2229,6 +2228,7 @@ int mkfs(struct cpmSuperBlock* drive, const char* name, const char* format, cons
         if (cpmCreat(&root, "00!!!TIME&.DAT", &ino, 0) == -1)
         {
             fprintf(stderr, "%s: Unable to create DateStamper file: %s\n", cmd, boo);
+            free(ds);
             return -1;
         }
         root.sb->ds = ds;

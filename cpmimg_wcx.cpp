@@ -266,8 +266,8 @@ private:
 					break;
 
 			} //-V773
-#endif
 			if (erri == -1)
+#endif
 				throw disk_err_t{ "Error in cpmReadSuper.", E_EOPEN };
 		}
 	}

@@ -1098,7 +1098,7 @@ static void free_stats(GETGEOM_STATS *st)
 static dsk_err_t record_secsize(GETGEOM_STATS *st, size_t size)
 {
 	int n;
-	unsigned short *p;
+//	unsigned short *p;
 
 /* See if it's a known sector size. If it is, increment the count. */
 	for (n = 0; n < st->n_secsizes; n++)
@@ -1124,9 +1124,9 @@ static dsk_err_t record_secsize(GETGEOM_STATS *st, size_t size)
 		}
 	}
 /* If there's no empty slot, grow the array */
-	p = dsk_realloc(st->sec_sizes, 
+	st->sec_sizes = dsk_realloc(st->sec_sizes, 
 			4 * st->n_secsizes * sizeof(unsigned short));
-	if (!p) return DSK_ERR_NOMEM;
+	if (!st->sec_sizes) return DSK_ERR_NOMEM;
 
 	n = st->n_secsizes; 
 	st->n_secsizes *= 2;

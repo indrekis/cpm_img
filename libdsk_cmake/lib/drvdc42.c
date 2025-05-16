@@ -215,7 +215,6 @@ dsk_err_t dc42_open(DSK_DRIVER *self, const char *filename, DSK_REPORTFUNC diagf
 	if (bufsize < 512) bufsize = 512;
 
 	secbuf = dsk_malloc(bufsize);
-	memset(secbuf, 0, bufsize);
 	if (!secbuf)
 	{
 		dsk_free(dcself->dc42_filename);
@@ -223,6 +222,8 @@ dsk_err_t dc42_open(DSK_DRIVER *self, const char *filename, DSK_REPORTFUNC diagf
 		fclose(fp);
 		return DSK_ERR_NOMEM;
 	}
+	memset(secbuf, 0, bufsize);
+
 	/* Attempt to load the boot sector */
 	datapos = ftell(fp);
 	tagpos  = datapos + datalen;

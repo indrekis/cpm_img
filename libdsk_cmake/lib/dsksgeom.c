@@ -98,7 +98,7 @@ static void dg_shell_folder(int csidl, char *buf)
     char *cwd;
         char result[PATH_MAX]; 
 
-    cwd = getcwd(result, PATH_MAX);
+    cwd = getcwd(result, PATH_MAX); // TODO: ф-ція не так означена чи не визначена під Windows
     if (cwd == NULL) strcpy(result, ".");
     strcpy(buf, result);
 

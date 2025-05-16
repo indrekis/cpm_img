@@ -171,7 +171,7 @@ static dsk_err_t imd_load_track(IMD_DSK_DRIVER *self, dsk_ltrack_t count,
 
 	/* Load the track header: 5 bytes */
 	fpos = ftell(fp);
-	if (fread(&tmp.imdt_mode, 1, 4, fp) < 4)
+	if (fread(&tmp.imdt_mode, 1, 4, fp) < 4) // Не баг per se, але чи не UB тут?
 	{
 		return DSK_ERR_OVERRUN;	/* EOF */
 	}
@@ -447,6 +447,7 @@ dsk_err_t imd_open(DSK_DRIVER *self, const char *filename, DSK_REPORTFUNC diagfu
 	}
 	if ((int)fread(comment, 1, ccmt, fp) < ccmt)
 	{
+        dsk_free(comment);
 		fclose(fp);
 		return DSK_ERR_NOTME;
 	}
@@ -622,7 +623,7 @@ static dsk_err_t imd_save_track(PLDBS ldbs, dsk_pcyl_t cyl, dsk_phead_t head,
 	if (th->count == 0)
 	{
 		/* Write fixed part of header */
-		if (fwrite(&tmp.imdt_mode, 1, 4, self->imd_fp) < 4
+		if (fwrite(&tmp.imdt_mode, 1, 4, self->imd_fp) < 4  // Не баг per se, але чи не UB тут?
 		||  fputc(0, self->imd_fp) == EOF)
 		{
 			return DSK_ERR_SYSERR;
@@ -659,7 +660,7 @@ static dsk_err_t imd_save_track(PLDBS ldbs, dsk_pcyl_t cyl, dsk_phead_t head,
 	}
 	
 	/* Write fixed part of header */
-	if (fwrite(&tmp.imdt_mode, 1, 4, self->imd_fp) < 4
+	if (fwrite(&tmp.imdt_mode, 1, 4, self->imd_fp) < 4  // Не баг per se, але чи не UB тут?
 	||  fputc(psh, self->imd_fp) == EOF)
 	{
 		return DSK_ERR_SYSERR;

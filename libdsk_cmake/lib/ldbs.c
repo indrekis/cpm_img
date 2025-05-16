@@ -641,6 +641,7 @@ dsk_err_t ldbs_new(PLDBS *result, const char *filename, const char *type)
 
 	if (err)
 	{
+        free(pres);
 		fclose(temp.fp);
 		remove(temp.filename);
 		ldbs_free(temp.filename);
@@ -731,6 +732,7 @@ dsk_err_t ldbs_open(PLDBS *result, const char *filename, char *type,
 	}
 	if (err)
 	{
+        free(pres);
 		fclose(temp.fp);
 		ldbs_free(temp.filename);
 		return err;

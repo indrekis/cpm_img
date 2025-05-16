@@ -261,7 +261,10 @@ dsk_err_t dsk_defgetgeom(DSK_DRIVER *self, DSK_GEOMETRY *geom)
 	 * missing address mark, then the data rate is wrong.
 	 */ 
 	e = dg_stdformat(geom, FMT_180K, NULL, NULL);
-	if (e) return e;
+	if (e) {
+        dsk_free(secbuf);
+        return e;
+    }
 	e = dsk_lsecid(self, geom, 0, &secid);
 	/* Check for HD discs */
 	if (e == DSK_ERR_NOADDR)

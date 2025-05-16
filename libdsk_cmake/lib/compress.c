@@ -22,6 +22,8 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <assert.h>
+
 #include "drvi.h"   /* For LINUXFLOPPY and WIN32FLOPPY */
 #include "compi.h"
 #include "comp.h"
@@ -180,6 +182,7 @@ dsk_err_t comp_creat(COMPRESS_DATA **cd, const char *filename, const char *type)
 
     if (!type)  /* Uncompressed */
     {
+        assert(cd);
         *cd = NULL;
         return DSK_ERR_OK;
     }

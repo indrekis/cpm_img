@@ -40,7 +40,7 @@ DRV_CLASS dc_ldbstext =
 	ldbst_close,   /* close */
 };
 
-
+// TODO: зліва і справа від && -- той ж вираз, пофіксити
 #define DC_CHECK(self) if (self->dr_class != &dc_ldbstext && self->dr_class != &dc_ldbstext) return DSK_ERR_BADPTR;
 
 
