@@ -81,12 +81,14 @@ char const cmd[] = "cpmimg_wcx";
 plugin_config_t plugin_config;
 
 // The DLL entry point
-BOOL APIENTRY DllMain(HANDLE hModule,
+BOOL APIENTRY DllMain(HMODULE hModule,
 	DWORD  ul_reason_for_call,
 	LPVOID lpReserved
 ) {
 	// For some reason is called many-many times. 
+	plugin_config.plugin_path = get_plugin_path(hModule);
 	auto rdconf = plugin_config.read_conf(nullptr, true);
+
 	return TRUE;
 }
 
@@ -179,7 +181,7 @@ private:
 		disk->ui_retry = false;
 	}
 #endif
-	void process_image(bool read_only) {
+	void process_image(bool read_only_in) {
 		hArchFile = open_file_shared_read(archname.data());
 		if (hArchFile == file_open_error_v)
 		{
@@ -189,7 +191,7 @@ private:
 		close_file(hArchFile);
 		hArchFile = file_handle_t();
 
-		const char* errs = Device_open(&super.dev, archname.data(), read_only ? O_RDONLY : O_RDWR,
+		const char* errs = Device_open(&super.dev, archname.data(), read_only_in ? O_RDONLY : O_RDWR,
 			driver_name.empty() ? nullptr : driver_name.c_str());
 
 		if (errs) // Pointer to error string 
@@ -199,7 +201,7 @@ private:
 			throw disk_err_t{ "Error in Device_open.", E_EOPEN };
 		}
 		int erri = cpmReadSuper(&super, &root,
-			plugin_config.image_format.empty() ? nullptr : plugin_config.image_format.data(),
+			plugin_config.image_format.is_empty() ? nullptr : plugin_config.image_format.data(),
 			use_uppercase);
 		if (erri == -1)
 		{
@@ -256,7 +258,7 @@ private:
 					break;
 
 				erri = cpmReadSuper(&super, &root,
-					plugin_config.image_format.empty() ? nullptr : plugin_config.image_format.data(),
+					plugin_config.image_format.is_empty() ? nullptr : plugin_config.image_format.data(),
 					use_uppercase);
 				if (erri == -1)
 				{

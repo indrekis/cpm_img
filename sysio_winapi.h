@@ -15,8 +15,11 @@
 #include <format>
 #endif 
 
+#include "minimal_fixed_string.h"
+
 const auto file_open_error_v = INVALID_HANDLE_VALUE;
 using file_handle_t = HANDLE;
+using module_handler_t = HMODULE;
 
 // All functions returning bool returns true on success
 file_handle_t open_file_shared_read(const char* filename);
@@ -70,6 +73,7 @@ void log_print_f(file_handle_t hnd, const char* format, Args&&... args) {
     }
 }
 
+minimal_fixed_string_t<MAX_PATH> get_plugin_path(module_handler_t hModule = nullptr);
 
 #endif 
 

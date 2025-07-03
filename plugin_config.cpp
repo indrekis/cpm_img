@@ -8,6 +8,7 @@
 
 #include "plugin_config.h"
 #include "string_tools.h"
+#include "cpmtools/cpmfs.h"
 
 #ifdef _WIN32
 #include "sysio_winapi.h"
@@ -128,6 +129,12 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         allow_dialogs = get_option_from_map<decltype(allow_dialogs)>("allow_dialogs"s);
         allow_txt_log = get_option_from_map<decltype(allow_txt_log)>("allow_txt_log"s);
         debug_level = get_option_from_map<decltype(debug_level)>("debug_level"s);
+        auto cfp = get_option_from_map<std::string>("diskdefs_file_path"s);
+        diskdefs_file_path.clear();
+		diskdefs_file_path.push_back(cfp.data());
+
+		diskdefs_path = diskdefs_file_path.data(); 
+
         image_format.clear();
         auto tf = get_option_from_map<std::string>("image_format"s);
         image_format.push_back( tf.c_str() );
@@ -186,10 +193,11 @@ bool plugin_config_t::write_conf()
 #endif 
     fprintf(cf, "allow_dialogs=%x\n", allow_dialogs);
     fprintf(cf, "allow_txt_log=%x\n", allow_txt_log);
-    log_file_path.push_back("D:\\Temp\\fatimg.txt");
+    log_file_path.push_back("D:\\Temp\\cpmimg.txt");
     fprintf(cf, "log_file_path=%s\n", log_file_path.data());
     fprintf(cf, "debug_level=%x\n\n", debug_level);
-    fprintf(cf, "image_format=%s\n\n", "osbexec1");
+    fprintf(cf, "image_format=%s\n", "osbexec1");
+    fprintf(cf, "diskdefs_file_path=%s\n", (diskdefs_file_path+"\\diskdefs").data());
 
     std::fclose(cf);
     return true;

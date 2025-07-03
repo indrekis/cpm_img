@@ -18,6 +18,8 @@
 
 struct plugin_config_t {
 	minimal_fixed_string_t<MAX_PATH> config_file_path;
+	minimal_fixed_string_t<MAX_PATH> plugin_path;
+	minimal_fixed_string_t<MAX_PATH> diskdefs_file_path; // This path or cuurent path will be used to load diskdefs file
 	uint32_t plugin_interface_version_lo = 0;
 	uint32_t plugin_interface_version_hi = 0;
 #if defined FLTK_ENABLED_EXPERIMENTAL && !defined NDEBUG

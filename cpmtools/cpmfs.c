@@ -49,7 +49,7 @@ char const *boo;
 static mode_t s_ifdir=1;
 static mode_t s_ifreg=1;
 
-char diskdefs_path[PATH_MAX] = DISKDEFS;
+char* diskdefs_path;
 
 /* memcpy7            -- Copy string, leaving 8th bit alone      */ /*{{{*/
 static void memcpy7(char *dest, char const *src, int count)

@@ -41,6 +41,8 @@ extern "C" {
 
 typedef int cpm_attr_t;
 
+extern char* diskdefs_path;
+
 struct cpmInode
 {
   ino_t ino;

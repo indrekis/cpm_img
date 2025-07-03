@@ -161,3 +161,18 @@ int ucs16_to_local(char* outstr, const wchar_t* instr, size_t maxoutlen) {
 		return 1;
 	}
 }
+
+minimal_fixed_string_t<MAX_PATH> get_plugin_path(module_handler_t hModule) {
+	char path[MAX_PATH] = { 0 };
+	GetModuleFileName(hModule, path, MAX_PATH);
+
+	// Remove the filename to get the directory only
+	minimal_fixed_string_t<MAX_PATH> full_path(path);
+	size_t lastSlash = full_path.find_last('\\');
+	if (lastSlash == full_path.npos)
+		lastSlash = full_path.find_last('/');
+	if (lastSlash != full_path.npos) {
+		full_path.shrink_to(lastSlash);
+	}
+	return full_path;
+}
