@@ -724,7 +724,9 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
 
   d->libdskGeometry[0] = '\0';
   d->type=0;
-  if ((fp=fopen("diskdefs","r"))==(FILE*)0 && (fp=fopen(diskdefs_path,"r"))==(FILE*)0)
+  if ( // (fp=fopen("diskdefs","r"))==(FILE*)0 && 
+      (fp=fopen(diskdefs_path,"r"))==(FILE*)0
+      )
   {
     fprintf(stderr,"%s: Neither `diskdefs' nor `%s' could be opened.\n",cmd, diskdefs_path);
     // exit(1);
