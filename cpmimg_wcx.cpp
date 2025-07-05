@@ -190,6 +190,22 @@ private:
 		}
 		close_file(hArchFile);
 		hArchFile = file_handle_t();
+		//=================================================================
+		DSK_PDRIVER driver = nullptr;
+		DSK_GEOMETRY geom{};
+		dsk_err_t err;
+		err = dsk_open(&driver, archname.data(), nullptr, nullptr);
+		if (err) {
+			throw disk_err_t{ "Error opening image archive file.", E_EOPEN };
+		}
+
+		err = dsk_getgeom(driver, &geom);
+		if (err) {
+			throw disk_err_t{ "Error reading image geometry.", E_EOPEN };
+			dsk_close(&driver);
+		}
+		dsk_close(&driver);
+		//=================================================================
 
 		const char* errs = Device_open(&super.dev, archname.data(), read_only_in ? O_RDONLY : O_RDWR,
 			driver_name.empty() ? nullptr : driver_name.c_str());
@@ -224,6 +240,9 @@ private:
 				choice = new Fl_Choice(0, 0, 200, 50, "Select format:" );
 
 				choice->add("osb1sssd");
+				choice->add("osborne1");
+				choice->add("osb1");
+				choice->add("osb2");
 				choice->add("osbexec1");
 				choice->add("osbVix");
 				choice->value(0);
@@ -246,7 +265,8 @@ private:
 				
 				// win->end();
 				win->show();
-				Fl::run();
+				while (win->shown()) { Fl::wait(); } // Better then Fl::run() for plugins -- allows reload
+
 				// auto is_OK_Pressed = butOK->changed();
 				// auto res = fl_choice("Wrong boot signature: %04x", "Stop", "OK", "Try MBR", bootsec.signature);
 				// fl_alert("OK pressed");
@@ -281,7 +301,6 @@ using archive_HANDLE = whole_disk_t*;
 //-----------------------=[ DLL exports ]=--------------------
 
 extern "C" {
-	// TODO: Osborne1 TD0 disk does not work. Same for cpmls compiled by MSVC, but works for cpmls compiled by MinGW.
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
@@ -746,7 +765,7 @@ extern "C" {
 #endif
 	} //-V773
 
-	DLLEXPORT int STDCALL GetPackerCaps() {
+	DLLEXPORT int STDCALL GetPackerCaps() { // Remove PK_CAPS_BY_CONTENT? 
 		return PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_DELETE | 
 			   PK_CAPS_MODIFY | PK_CAPS_NEW | PK_CAPS_MULTIPLE | PK_CAPS_OPTIONS;
 		// PK_CAPS_DELETE // PK_CAPS_MODIFY //PK_CAPS_ENCRYPT // PK_CAPS_NEW 
