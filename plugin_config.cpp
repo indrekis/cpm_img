@@ -8,7 +8,8 @@
 
 #include "plugin_config.h"
 #include "string_tools.h"
-#include "cpmtools/cpmfs.h"
+
+#include "libdsk.h"
 
 #ifdef _WIN32
 #include "sysio_winapi.h"
@@ -203,3 +204,67 @@ bool plugin_config_t::write_conf()
     return true;
 }
 
+std::vector<cpm_disk_descr_t> parse_diskdefs_c(const char* filename) {
+
+    // Only for private use
+    std::vector<cpm_disk_descr_t> res;
+
+    FILE* file = fopen(filename, "r");
+    if (!file) 
+		return res; // TODO: throw exception 
+    constexpr int line_size = 1024; // Limit for the string 
+    char line[line_size];
+
+    cpm_disk_descr_t superblock = {};
+    while (fgets(line, line_size, file)) {
+        // Remove newline and trim comments
+        char* comment = strchr(line, '#');
+        if (comment) *comment = '\0';
+
+        // Skip leading whitespace
+        char* token = line;
+        while (*token && isspace((unsigned char)*token)) token++;
+
+        if (*token == '\0') continue;
+
+        char key[65] = { 0 }, value[65] = { 0 };
+        if (sscanf(token, "%63s %63s", key, value) < 1) continue;
+
+        if (strcmp(key, "diskdef") == 0) {
+			strcpy(superblock.fmt_name, value);
+        }
+        
+        if (strcmp(key, "end") == 0) 
+        {
+			res.push_back(superblock);
+            memset(&superblock, 0, sizeof(cpm_disk_descr_t));
+            continue;
+        }
+
+             if (strcmp(key, "seclen") == 0)    superblock.secLength = atoi(value);
+        else if (strcmp(key, "sectrk") == 0)    superblock.sectrk = atoi(value);
+        else if (strcmp(key, "tracks") == 0)    superblock.tracks = atoi(value); 
+        else if (strcmp(key, "skew") == 0)      superblock.skew = atoi(value);
+        else if (strcmp(key, "blocksize") == 0) superblock.blksiz = atoi(value);
+        else if (strcmp(key, "maxdir") == 0)    superblock.maxdir = atoi(value);
+        else if (strcmp(key, "boottrk") == 0)   superblock.boottrk = atoi(value);
+        else if (strcmp(key, "bootsec") == 0)   superblock.bootsec = atoi(value);
+        else if (strcmp(key, "os") == 0) {
+                  if (strcmp(value, "2.2") == 0)    superblock.type |= CPMFS_DR22;
+             else if (strcmp(value, "3") == 0)      superblock.type |= CPMFS_DR3;
+             else if (strcmp(value, "isx") == 0)    superblock.type |= CPMFS_ISX;
+             else if (strcmp(value, "p2dos") == 0)  superblock.type |= CPMFS_P2DOS;
+             else if (strcmp(value, "zsys") == 0)   superblock.type |= CPMFS_ZSYS;
+             else
+             {
+				 // unknown OS type, skip it
+             }
+         }
+             auto tt = errno;
+             // Add reading skewtab, malloc(sizeof(int)*sectors);
+             // Add reading offset
+    }
+        
+    fclose(file);
+    return res;
+}

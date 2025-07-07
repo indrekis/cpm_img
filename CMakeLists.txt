@@ -49,6 +49,8 @@ endif()
 
 target_link_libraries(cpmimg_wcx PRIVATE cpmfs libdsk) 
 
+# target_compile_options(cpmimg_wcx PRIVATE "/fsanitize=address") # RTC1 - x86 only?
+
 add_executable(cpmls cpmtools/cpmls.c  cpmtools/getopt.c)
 target_link_libraries(cpmls cpmfs libdsk)
 

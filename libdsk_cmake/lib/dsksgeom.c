@@ -83,6 +83,7 @@ static DSK_NAMEDGEOM stdg[] =
  * think this may be part of the reason. Move it down to the bottom, beyond
  * the last numeric ID. */
 {"pcpm320", { SIDES_OUTBACK, 40, 2, 8,    1, 512, RATE_SD, 0x2A, 0x50,   RECMODE_MFM,  0 }, "IBM 320k (CP/M-86 / DOSPLUS)" }, /* 320k */
+{"osbexec1",  { SIDES_ALT,     40, 1, 5,    1, 1024, RATE_DD, 0x2A, 0x52,   RECMODE_MFM,  0 }, "Osborne Executive - SSDD" }, /* 200k */
 };
 
 

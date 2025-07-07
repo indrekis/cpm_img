@@ -2,10 +2,12 @@
 #define PLUGIN_CONFIG_H_INCLUDED
 
 #include "minimal_fixed_string.h"
+#include "cpmtools/cpmfs.h"
 
 #include <string>
 #include <map>
 #include <cstdio>
+#include <vector>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
@@ -71,5 +73,31 @@ public:
 	}
 
 };
+
+//! Using the cpmSuperBlock is totally failing -- WTF even push_back does not work, pushin garbage sometimes. 
+//! So here our clone.
+
+struct cpm_disk_descr_t
+{
+	int uppercase = 0;
+
+	int secLength = 0;
+	int tracks = 0;
+	int sectrk = 0;
+	int blksiz = 0;
+	int maxdir = 0;
+	int dirblks = 0;
+	int skew = 0;
+	int bootsec = 0;
+	int boottrk = 0;
+	off_t offset = 0;
+	int type = 0;
+	int size = 0;
+	int extents = 0; /* logical extents per physical extent */
+	int* skewtab = nullptr;
+	char fmt_name[256] = { 0 };
+};
+
+std::vector<cpm_disk_descr_t> parse_diskdefs_c(const char* filename);
 
 #endif 
