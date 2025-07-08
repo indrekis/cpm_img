@@ -1,3 +1,8 @@
+/*
+* Copyright (c) 2017-2025, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
+*
+* The code is released under the MIT License.
+*/
 #ifndef PLUGIN_CONFIG_H_INCLUDED
 #define PLUGIN_CONFIG_H_INCLUDED
 

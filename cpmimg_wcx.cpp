@@ -1,11 +1,8 @@
 // This is a personal academic project. Dear PVS-Studio, please check it.
 // PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
-//
-// This is a personal academic project. Dear PVS-Studio, please check it.
-// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 /*
 * CP/M floppy disk images plugin for the Total Commander.
-* Copyright (c) 2022-2023, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
+* Copyright (c) 2022-2025, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
 *
 */
 
