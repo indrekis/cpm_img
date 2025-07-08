@@ -911,18 +911,6 @@ extern "C" {
 		return 0;
 	}
 
-#ifdef FLTK_ENABLED_EXPERIMENTAL
-	static Fl_Choice* info_widget = nullptr;
-	static Fl_Double_Window* conf_widget = nullptr;
-	static void format_select_OK_callback(Fl_Button* obj) {
-		plugin_config.image_format = info_widget->text();
-		conf_widget->hide();
-	}
-	static void format_select_cancel_callback(Fl_Button* obj) {
-		conf_widget->hide();
-	}
-#endif
-
 	DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
 		auto disks_set = parse_diskdefs_c(plugin_config.diskdefs_file_path.data());
 		img_type_sel_GUI_t img_type_sel_GUI(disks_set, {}, false);

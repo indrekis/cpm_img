@@ -22,7 +22,6 @@ add_subdirectory(libdsk_cmake)
 include_directories(${PROJECT_SOURCE_DIR}/libdsk_cmake/include)
 
 # Definitions for the cmpfs, temporary
-add_compile_definitions(DISKDEFS="d:/WorkWWW/Blog/ComputersHistory.S/CPM_emu/Mame/MAMEUI/ROMs/osbexec/diskdefs")
 add_compile_definitions(FORMAT="osbexec1")
 
 set(CMAKE_CXX_STANDARD 20)
