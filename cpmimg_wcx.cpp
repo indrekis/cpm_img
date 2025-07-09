@@ -27,6 +27,7 @@
 #include "sysio_winapi.h"
 #include "minimal_fixed_string.h"
 #include "plugin_config.h"
+#include "cpmimg_plugin_gui.h"
 
 #include "wcxhead.h"
 #include <new>
@@ -42,7 +43,7 @@
 
 // #define FLTK_ENABLED_EXPERIMENTAL  // Here for the quick tests -- should be defined by the build system
 
-#ifdef FLTK_ENABLED_EXPERIMENTAL
+#ifdef FLTK_ENABLED_EXPERIMENTAL1
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
 #include <FL/Fl_Box.H>
@@ -80,6 +81,8 @@ char const cmd[] = "cpmimg_wcx";
 
 plugin_config_t plugin_config;
 
+// extern HINSTANCE g_GUI_dlg_hInstance;
+
 // The DLL entry point
 BOOL APIENTRY DllMain(HMODULE hModule,
 	DWORD  ul_reason_for_call,
@@ -88,6 +91,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 	// For some reason is called many-many times. 
 	plugin_config.plugin_path = get_plugin_path(hModule);
 	auto rdconf = plugin_config.read_conf(nullptr, true);
+	g_GUI_dlg_hInstance = hModule;
 
 	return TRUE;
 }
@@ -117,7 +121,7 @@ public:
 	int get_err_code() const { return err_code; }
 };
 
-#ifdef FLTK_ENABLED_EXPERIMENTAL
+#ifdef FLTK_ENABLED_EXPERIMENTAL1
 class Fl_Choice_ArrowKeys : public Fl_Choice {
 public:
 	using Fl_Choice::Fl_Choice;

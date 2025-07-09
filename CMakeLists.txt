@@ -30,6 +30,7 @@ add_library(cpmfs STATIC cpmtools/device_libdsk.c cpmtools/cpmfs.c )
 
 set(SOURCE_FILES cpmimg_wcx.cpp  minimal_fixed_string.h  resource.h  sysio_winapi.cpp  sysio_winapi.h wcxhead.h main_resources.rc
 string_tools.cpp string_tools.h plugin_config.cpp plugin_config.h 
+cpmimg_plugin_gui.cpp cpmimg_plugin_gui.h cpmimg_plugin_gui.rc cpmimg_plugin_gui_resources.h 
 	)
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)	
