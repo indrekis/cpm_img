@@ -29,7 +29,7 @@ struct plugin_config_t {
 	minimal_fixed_string_t<MAX_PATH> diskdefs_file_path;
 	uint32_t plugin_interface_version_lo = 0;
 	uint32_t plugin_interface_version_hi = 0;
-#if defined FLTK_ENABLED_EXPERIMENTAL && !defined NDEBUG
+#if !defined NDEBUG
 	bool allow_dialogs = true;
 	bool allow_txt_log = true;
 #else 

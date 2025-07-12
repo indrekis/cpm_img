@@ -22,6 +22,7 @@
 #include "minimal_fixed_string.h"
 #include "plugin_config.h"
 
+//! TODO: Provision for the Linux GUIs
 
 #include <windows.h>
 #include <windowsx.h>
@@ -48,6 +49,8 @@ private:
     HWND hEditBoottrk;
     HWND hEditProbability;
     HWND hCheckSaveType;
+
+    HBRUSH hDialogBgBrush = nullptr;
 
     const std::vector<cpm_disk_descr_t>& possible_fmts;
     DSK_GEOMETRY img_geom;
@@ -131,6 +134,9 @@ private:
             pThis = reinterpret_cast<img_type_sel_GUI_t*>(lParam);
             SetWindowLongPtr(hDlg, GWLP_USERDATA, lParam);
             pThis->hDlg = hDlg;
+
+            pThis->hDialogBgBrush = CreateSolidBrush(RGB(240, 240, 255));
+
             return pThis->OnInitDialog();
         }
 
@@ -146,13 +152,29 @@ private:
             }
             break;
 
+        case WM_CTLCOLORDLG:
+            return (INT_PTR)GetStockObject(LTGRAY_BRUSH);
+            // return (INT_PTR)(pThis->hDialogBgBrush);
+
+        case WM_CTLCOLORSTATIC: {
+            HDC hdc = (HDC)wParam;
+            SetBkMode(hdc, TRANSPARENT);
+            return (INT_PTR)GetStockObject(LTGRAY_BRUSH);
+        }
+
         case WM_CLOSE:
             if (pThis) {
                 pThis->ui_retry = false;
+                if (pThis->hDialogBgBrush) {
+                    DeleteObject(pThis->hDialogBgBrush);
+                    pThis->hDialogBgBrush = nullptr;
+                }
                 EndDialog(hDlg, IDCANCEL);
             }
             return TRUE;
         }
+
+
 
         return FALSE;
     }
@@ -178,6 +200,7 @@ private:
         hEditBoottrk = GetDlgItem(hDlg, IDC_EDIT_BOOTTRK);
         hEditProbability = GetDlgItem(hDlg, IDC_EDIT_PROBABILITY);
         hCheckSaveType = GetDlgItem(hDlg, IDC_CHECK_SAVE_TYPE);
+        auto hStaticText = GetDlgItem(hDlg, IDC_STATIC_TITLE);
 
         // Debug: Check if controls were found
         if (!hComboFormat) {
@@ -190,8 +213,11 @@ private:
             LOGFONT lf;
             GetObject(GetStockObject(DEFAULT_GUI_FONT), sizeof(LOGFONT), &lf);
             lf.lfWeight = FW_BOLD;
+            lf.lfHeight = -16; // Approx. 12pt on 96 DPI
             hBoldFont = CreateFontIndirect(&lf);
-            hNormalFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+            GetObject(GetStockObject(DEFAULT_GUI_FONT), sizeof(LOGFONT), &lf);
+            lf.lfHeight = -16; // Approx. 12pt on 96 DPI
+			hNormalFont = CreateFontIndirect(&lf);
         }
 
         // Populate combo box
@@ -210,6 +236,8 @@ private:
             ShowWindow(hEditProbability, SW_HIDE);
             ShowWindow(GetDlgItem(hDlg, IDC_STATIC_PROBABILITY), SW_HIDE);
         }
+
+        SendMessage(hStaticText, WM_SETFONT, (WPARAM)hBoldFont, TRUE);
 
         // Update info fields
         update_info_fields(0);

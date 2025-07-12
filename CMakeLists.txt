@@ -4,10 +4,6 @@
 # Using MSVC 2019 and create 32-bit plugin:
 #  cmake -A Win32 .. -G"Visual Studio 16" 
 #
-# To enable FLTK usage:
-#  cmake -A x64   .. -G"Visual Studio 16" -DFLTK_ENABLED_EXPERIMENTAL=1
-#  cmake -A Win32 .. -G"Visual Studio 16" -DFLTK_ENABLED_EXPERIMENTAL=1
-#
 # Build by: 
 #  cmake --build . --config Release
 # or any of:

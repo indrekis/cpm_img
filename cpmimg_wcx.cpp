@@ -41,23 +41,6 @@
 #include <map>
 #include <cassert>
 
-// #define FLTK_ENABLED_EXPERIMENTAL  // Here for the quick tests -- should be defined by the build system
-
-#ifdef FLTK_ENABLED_EXPERIMENTAL1
-#include <FL/Fl.H>
-#include <FL/Fl_Window.H>
-#include <FL/Fl_Box.H>
-#include <FL/fl_ask.H>
-#include <FL/Fl_Button.H>
-#include <FL/Fl_Choice.H>
-#include <FL/Fl_Double_Window.H>
-#include <FL/Fl_Text_Display.H>
-#include <FL/Fl_Output.H>
-#include <FL/Fl_Check_Button.H>
-#include <FL/Fl_Return_Button.H>
-
-#include "Fl_Flow/Fl_Flow.h"
-#endif
 
 using std::nothrow, std::uint8_t;
 
@@ -121,231 +104,6 @@ public:
 	int get_err_code() const { return err_code; }
 };
 
-#ifdef FLTK_ENABLED_EXPERIMENTAL1
-class Fl_Choice_ArrowKeys : public Fl_Choice {
-public:
-	using Fl_Choice::Fl_Choice;
-
-	int handle(int event) override {
-		if (event == FL_KEYDOWN) {
-			int current = value();
-			int count = menu()->size();
-
-			if (Fl::event_key() == FL_Up) {
-				if (current > 0) value(current - 1);
-				do_callback();
-				return 1;
-			}
-			else if (Fl::event_key() == FL_Down) {
-				if (current < count - 1) value(current + 1);
-				do_callback();
-				return 1;
-			}
-		}
-		return Fl_Choice::handle(event);
-	}
-};
-
-class img_type_sel_GUI_t {
-
-	static void format_select_OK_callback(Fl_Button* obj, void* arg) {
-		auto img_type_sel_GUI = static_cast<img_type_sel_GUI_t*>(arg);
-		img_type_sel_GUI->image_type = img_type_sel_GUI->choice->text();
-		img_type_sel_GUI->win->hide();
-		img_type_sel_GUI->ui_retry = true;
-	}
-	static void format_select_cancel_callback(img_type_sel_GUI_t* obj, void* arg) {
-		auto img_type_sel_GUI = static_cast<img_type_sel_GUI_t*>(arg);
-		img_type_sel_GUI->win->hide();
-		img_type_sel_GUI->ui_retry = false;
-	}
-
-	Fl_Double_Window* win = nullptr;
-	Fl_Choice_ArrowKeys* choice = nullptr;
-	Fl_Output* out_secLength = nullptr;
-	Fl_Output* out_tracks = nullptr;
-	Fl_Output* out_sectrk = nullptr;
-	Fl_Output* out_blksiz = nullptr;
-	Fl_Output* out_maxdir = nullptr;
-	Fl_Output* out_dirblks = nullptr;
-	Fl_Output* out_boottrk = nullptr;
-	Fl_Output* is_ok_probability = nullptr;
-	Fl_Check_Button* save_image_type = nullptr;
-	const std::vector<cpm_disk_descr_t>& possible_fmts;
-	DSK_GEOMETRY img_geom;
-	bool ui_retry = false;
-	minimal_fixed_string_t<33> image_type;
-	bool show_probab = false;
-
-	void update_info_fields(int idx) {
-		if (idx < 0 || idx >= static_cast<int>(possible_fmts.size()))
-			return;
-		const auto& dsk = possible_fmts[idx];
-
-		int match_score = 0;
-		if (show_probab) {
-			if (img_geom.dg_secsize == dsk.secLength) {
-				out_secLength->textfont(FL_HELVETICA_BOLD);
-				++match_score;
-				// out_secLength->labelcolor(FL_RED);
-			}
-			else {
-				out_secLength->textfont(FL_HELVETICA);
-			}
-			int geom_total_tracks = img_geom.dg_cylinders * img_geom.dg_heads;
-			if (geom_total_tracks == dsk.tracks) {
-				++match_score;
-				out_tracks->textfont(FL_HELVETICA_BOLD);
-			}
-			else {
-				out_tracks->textfont(FL_HELVETICA);
-			}
-			if (img_geom.dg_sectors == dsk.sectrk) {
-				++match_score;
-				out_sectrk->textfont(FL_HELVETICA_BOLD);
-			}
-			else {
-				out_sectrk->textfont(FL_HELVETICA);
-			}
-		}
-
-		char buf[128];
-		sprintf(buf, "%d", dsk.secLength); out_secLength->value(buf);
-		sprintf(buf, "%d", dsk.tracks);    out_tracks->value(buf);
-		sprintf(buf, "%d", dsk.sectrk);    out_sectrk->value(buf);
-		sprintf(buf, "%d", dsk.blksiz);    out_blksiz->value(buf);
-		sprintf(buf, "%d", dsk.maxdir);    out_maxdir->value(buf);
-		sprintf(buf, "%d", dsk.dirblks);   out_dirblks->value(buf);
-		sprintf(buf, "%d", dsk.boottrk);   out_boottrk->value(buf);
-
-		if (show_probab) {
-			is_ok_probability->textfont(FL_HELVETICA_BOLD);
-			switch (match_score) {
-			case 0:
-				is_ok_probability->value("No");
-				break;
-			case 1:
-				is_ok_probability->value("Low probability");
-				break;
-			case 2:
-				is_ok_probability->value("Could be");
-				break;
-			case 3:
-				is_ok_probability->value("Yes");
-				break;
-			default:
-				is_ok_probability->value("Unknown");
-			}
-		}
-
-	}
-public:
-	img_type_sel_GUI_t(const std::vector<cpm_disk_descr_t>& possible_fmts_in, const DSK_GEOMETRY& geom_in, bool show_probab_in) :
-		possible_fmts(possible_fmts_in), img_geom(geom_in), show_probab(show_probab_in)
-	{
-		win = new Fl_Double_Window(400, 320, "Choose image format");
-		win->begin();
-
-		//! https://github.com/osen/Fl_Flow
-		Fl_Flow* flow = new Fl_Flow{ 0, 0, win->w(), win->h() };
-		// See also: https://www.fltk.org/doc-1.4/coordinates.html#coordinates_pack
-		// https://www.fltk.org/doc-1.4/classFl__Tile.html
-		// https://github.com/osen/FL_Flex
-
-		Fl_Box* title = new Fl_Box(0, 0, 200, 50, "Failed to open image.");
-		// Fl_Box* sep = new Fl_Box(0, 0, 200, 50, "Select format:");
-		choice = new Fl_Choice_ArrowKeys(0, 0, 200, 50, "Select format:");
-
-		for (const auto& dsk : possible_fmts) {
-			choice->add(dsk.fmt_name);
-		}
-
-		choice->value(0);
-
-		out_secLength = new Fl_Output(0, 0, 100, 25, "Sector length:");
-		out_tracks = new Fl_Output(0, 0, 100, 25, "Tracks:");
-		out_sectrk = new Fl_Output(0, 0, 100, 25, "Sectors/track:");
-		out_blksiz = new Fl_Output(0, 0, 100, 25, "Block size:");
-		out_maxdir = new Fl_Output(0, 0, 100, 25, "Max dir. entries:");
-		out_dirblks = new Fl_Output(0, 0, 100, 25, "Dir. blocks:");
-		out_boottrk = new Fl_Output(0, 0, 100, 25, "Boot track:");
-		is_ok_probability = new Fl_Output(0, 0, 100, 25, "Could be it?");
-		save_image_type = new Fl_Check_Button(50, 30, 200, 30, "Use this disk type for other images");
-
-		if (!show_probab)
-			save_image_type->value(true);
-
-		update_info_fields(choice->value());
-
-		choice->callback([](Fl_Widget* w, void* data) {
-			auto* ch = static_cast<Fl_Choice*>(w);
-			int idx = ch->value();
-
-			auto* ctx = static_cast<img_type_sel_GUI_t*>(data); // Replace with your actual context
-			ctx->update_info_fields(idx);
-			}, this);
-
-		Fl_Button* butOK = new Fl_Return_Button(0, 0, 80, 30, "OK");
-		// butOK->when(0);
-		Fl_Button* butCn = new Fl_Button(0, 0, 80, 30, "Cancel");
-		butOK->callback((Fl_Callback*)(format_select_OK_callback), this);
-		butCn->callback((Fl_Callback*)(format_select_cancel_callback), this);
-
-		win->resizable(flow);
-		flow->rule(title, "^=<");
-		//flow->rule(sep, "<^");
-		flow->rule(choice, "^=>");
-
-		flow->rule(new Fl_Box(0, 0, out_secLength->w(), 25, ""), "^<"); // Or text of next Fl_Output disappears beyond left border
-		flow->rule(out_secLength, "^<");
-		flow->rule(out_tracks, "^>");
-
-		flow->rule(new Fl_Box(0, 0, out_sectrk->w(), 25, ""), "^<");
-		flow->rule(out_sectrk, "^<");
-		flow->rule(out_blksiz, "^>");
-
-		flow->rule(new Fl_Box(0, 0, out_maxdir->w(), 25, ""), "^<");
-		flow->rule(out_maxdir, "^<");
-		flow->rule(out_dirblks, "^>");
-
-		flow->rule(new Fl_Box(0, 0, out_maxdir->w(), 25, ""), "^<");
-		flow->rule(out_boottrk, "^<");
-		if (show_probab) {
-			flow->rule(is_ok_probability, "^>");
-		}
-		else {
-			flow->rule(new Fl_Box(0, 0, out_maxdir->w(), 25, ""), "^>"); // Placeholder
-			is_ok_probability->hide();
-		}
-
-		flow->rule(save_image_type, "^<");
-
-
-		flow->rule(butCn, "v<");
-		flow->rule(butOK, "v>");
-
-		// win->end();
-		win->set_modal();
-		win->show();
-		while (win->shown()) { Fl::wait(); } // Better then Fl::run() for plugins -- allows reload
-
-		delete win;
-		win = nullptr;
-	}
-
-	bool attempt_new_read() {
-		return ui_retry;
-	}
-
-	bool save_disk_type() const {
-		return save_image_type->value() != 0;
-	}
-
-	auto get_image_type() const {
-		return image_type;
-	}
-};
-#endif
 
 struct whole_disk_t {
 	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
@@ -452,7 +210,6 @@ private:
 		{
 			close_file(hArchFile);
 			plugin_config.log_print("\n\nError# Failed reading superblock.");
-#ifdef FLTK_ENABLED_EXPERIMENTAL
 			while (true) {
 				img_type_sel_GUI_t img_type_sel_GUI(possible_fmts, geom, true);				
 
@@ -475,7 +232,6 @@ private:
 
 			} //-V773
 			if (erri == -1)
-#endif
 				throw disk_err_t{ "Error in cpmReadSuper.", E_EOPEN };
 		}
 	}
