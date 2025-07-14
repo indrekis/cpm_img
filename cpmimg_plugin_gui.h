@@ -230,14 +230,12 @@ private:
         }
         ComboBox_SetCurSel(hComboFormat, 0);
 
-        // Set checkbox state
         if (!show_probab) {
+        // Set checkbox state
             Button_SetCheck(hCheckSaveType, BST_CHECKED);
 			Button_SetCheck(hCheckSaveTypeCur, BST_CHECKED);
-        }
 
         // Hide probability field if not needed
-        if (!show_probab) {
             ShowWindow(hEditProbability, SW_HIDE);
             ShowWindow(GetDlgItem(hDlg, IDC_STATIC_PROBABILITY), SW_HIDE);
         }

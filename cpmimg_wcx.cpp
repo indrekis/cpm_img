@@ -149,7 +149,7 @@ struct whole_disk_t {
 	char starlit[2] = "*";
 	char* const star[1] = { starlit };
 	char** gargv = nullptr;
-	int gargc;
+	int gargc = 0;
 
 	uint32_t curren_file_counter = 0;
 
