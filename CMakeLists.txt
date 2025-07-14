@@ -1,11 +1,11 @@
 # Configure by:
 # Using MSVC 2019 and create 64-bit plugin:
-#  cmake -A x64   .. -G"Visual Studio 16" 	
+#  cmake -A x64   .. -G"Visual Studio 17" -DCMAKE_TOOLCHAIN_FILE="<VCPKG_PATH>/vcpkg/scripts/buildsystems/vcpkg.cmake"	 
 # Using MSVC 2019 and create 32-bit plugin:
-#  cmake -A Win32 .. -G"Visual Studio 16" 
+#  cmake -A Win32 .. -G"Visual Studio 17" -DCMAKE_TOOLCHAIN_FILE="<VCPKG_PATH>/vcpkg/scripts/buildsystems/vcpkg.cmake"	
 #
 # Build by: 
-#  cmake --build . --config Release
+#  cmake --build . --config Release 
 # or any of:
 #  cmake --build . --config [Debug|RelWithDebInfo|MinSizeRel]
 # otherwise ('cmake --build .') could lead to /MD vs /MDd vs others mismatch:
