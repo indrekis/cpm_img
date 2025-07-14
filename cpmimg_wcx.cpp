@@ -63,6 +63,7 @@ using std::nothrow, std::uint8_t;
 char const cmd[] = "cpmimg_wcx";
 
 plugin_config_t plugin_config;
+minimal_fixed_string_t<33> image_format_loc; // local copy of format to be able to remember it 
 
 // extern HINSTANCE g_GUI_dlg_hInstance;
 
@@ -71,10 +72,22 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 	DWORD  ul_reason_for_call,
 	LPVOID lpReserved
 ) {
-	// For some reason is called many-many times. 
-	plugin_config.plugin_path = get_plugin_path(hModule);
-	auto rdconf = plugin_config.read_conf(nullptr, true);
-	g_GUI_dlg_hInstance = hModule;
+	switch (ul_reason_for_call)
+	{
+	case DLL_PROCESS_ATTACH:
+	{
+		plugin_config.plugin_path = get_plugin_path(hModule);
+		auto rdconf = plugin_config.read_conf(nullptr, true);
+		g_GUI_dlg_hInstance = hModule;
+	}
+		break;
+	case DLL_PROCESS_DETACH:
+		break;
+	case DLL_THREAD_ATTACH:
+		break;
+	case DLL_THREAD_DETACH:
+		break;
+	}
 
 	return TRUE;
 }
@@ -109,7 +122,17 @@ struct whole_disk_t {
 	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
 	file_handle_t hArchFile = file_handle_t(); //opened file handles
 	int openmode_m = PK_OM_LIST;
-	bool read_only = true;
+	bool read_only = true; // Opening to read only or read-write
+	bool can_we_write_this_format = true; // If we can write this format
+
+	minimal_fixed_string_t<MAX_PATH> get_arch_ext() const{
+		auto ext_pos = archname.find_last('.');
+		if (ext_pos == std::string::npos) {
+			return minimal_fixed_string_t<MAX_PATH>{};
+		}
+		return minimal_fixed_string_t<MAX_PATH>{archname.data() + ext_pos + 1};
+	}
+
 	size_t image_file_size = 0;	
 
 	tChangeVolProc   pLocChangeVol = nullptr;
@@ -134,7 +157,9 @@ struct whole_disk_t {
 		openmode_m(openmode), image_file_size(vol_size), read_only{ read_only_in }
 	{
 		archname.push_back(archname_in);
-		process_image(read_only);
+		if(image_format_loc.is_empty())
+			image_format_loc = plugin_config.image_format; // Add locking! 
+		process_image();
 	}
 
 	uint32_t users_counter = 0;
@@ -149,7 +174,16 @@ struct whole_disk_t {
 	}
 private: 
 
-	void process_image(bool read_only_in) {
+	void process_image() {
+		// td0 is read-only
+		if(get_arch_ext() == "td0"){
+			can_we_write_this_format = false;
+		}
+		else
+		{
+			can_we_write_this_format = true;
+		}
+
 		hArchFile = open_file_shared_read(archname.data());
 		if (hArchFile == file_open_error_v)
 		{
@@ -162,39 +196,43 @@ private:
 		DSK_PDRIVER driver = nullptr;
 		DSK_GEOMETRY geom{};
 		dsk_err_t err;
+		auto disks_set = parse_diskdefs_c(plugin_config.diskdefs_file_path.data());
+		decltype(disks_set) possible_fmts;
+
 		err = dsk_open(&driver, archname.data(), nullptr, nullptr);
 		if (err) {
 			throw disk_err_t{ "Error opening image archive file.", E_EOPEN };
 		}
 
 		err = dsk_getgeom(driver, &geom);
-		if (err) {
-			dsk_close(&driver);
-			throw disk_err_t{ "Error reading image geometry.", E_EOPEN };
-		}
 		dsk_close(&driver);
-		//=================================================================
-		auto disks_set = parse_diskdefs_c(plugin_config.diskdefs_file_path.data());
-		decltype(disks_set) possible_fmts;
-		// TODO: Here is some duplication with img_type_sel_GUI_t
-		const int enough_score = 2;
-		for (const auto& dsk : disks_set) {
-			int match_score = 0;
-			if (geom.dg_secsize == dsk.secLength)
-				++match_score;
-			int geom_total_tracks = geom.dg_cylinders * geom.dg_heads;
-			if (geom_total_tracks == dsk.tracks) 
-				++match_score;
-			if (geom.dg_sectors == dsk.sectrk) 
-				++match_score;
+		if (err) {
+			plugin_config.log_print("\n\nError# dsk_getgeom failed with: %d", err);
+			
+			// throw disk_err_t{ "Error reading image geometry.", E_EOPEN };
+		}
+		else {
+			const int enough_score = 2;
+			//=================================================================
+			// TODO: Here is some duplication with img_type_sel_GUI_t
+			for (const auto& dsk : disks_set) {
+				int match_score = 0;
+				if (geom.dg_secsize == dsk.secLength)
+					++match_score;
+				int geom_total_tracks = geom.dg_cylinders * geom.dg_heads;
+				if (geom_total_tracks == dsk.tracks)
+					++match_score;
+				if (geom.dg_sectors == dsk.sectrk)
+					++match_score;
 
-			if (match_score >= enough_score ) {
-				possible_fmts.push_back(dsk);
+				if (match_score >= enough_score) {
+					possible_fmts.push_back(dsk);
+				}
 			}
 		}
 		//=================================================================
 
-		const char* errs = Device_open(&super.dev, archname.data(), read_only_in ? O_RDONLY : O_RDWR,
+		const char* errs = Device_open(&super.dev, archname.data(), read_only ? O_RDONLY : O_RDWR,
 			driver_name.empty() ? nullptr : driver_name.c_str());
 
 		if (errs) // Pointer to error string 
@@ -204,7 +242,7 @@ private:
 			throw disk_err_t{ "Error in Device_open.", E_EOPEN };
 		}
 		int erri = cpmReadSuper(&super, &root,
-			plugin_config.image_format.is_empty() ? nullptr : plugin_config.image_format.data(),
+			image_format_loc.is_empty() ? nullptr : image_format_loc.data(),
 			use_uppercase);
 		if (erri == -1)
 		{
@@ -216,8 +254,12 @@ private:
 				if(!img_type_sel_GUI.attempt_new_read())
 					break;
 
+				if ( img_type_sel_GUI.save_disk_type_for_cur() || img_type_sel_GUI.save_disk_type() ) {
+					plugin_config.image_format = img_type_sel_GUI.get_image_type(); 
+					image_format_loc = plugin_config.image_format;
+				}
 				if (img_type_sel_GUI.save_disk_type()) {
-					plugin_config.image_format = img_type_sel_GUI.get_image_type();
+					plugin_config.write_conf();					
 				}
 				
 				erri = cpmReadSuper(&super, &root,
@@ -486,6 +528,10 @@ extern "C" {
 			return E_NO_MEMORY;
 		}
 
+		if (!loc_arch->can_we_write_this_format) {
+			return E_NOT_SUPPORTED; 
+		}
+
 		// std::vector<const char*> file_list;
 		const char* cur_ptr = DeleteList;
 		size_t sl = strlen(cur_ptr);
@@ -539,7 +585,7 @@ extern "C" {
 			// file doesn't exist
 			super.dev.opened = 0;
 			bool use_uppercase = true;
-			cpmReadSuper(&super, &root, plugin_config.image_format.data(),
+			cpmReadSuper(&super, &root, image_format_loc.data(),
 				use_uppercase);
 			size_t bootTrackSize = super.boottrk * super.secLength * super.sectrk;
 			char* bootTracks = new char[bootTrackSize];
@@ -547,7 +593,7 @@ extern "C" {
 			const char* label = "unlabeled";
 			bool use_timeStamps = false;
 			memset(bootTracks, 0xe5, bootTrackSize);
-			if (mkfs(&super, PackedFile, plugin_config.image_format.data(),
+			if (mkfs(&super, PackedFile, image_format_loc.data(),
 				label, bootTracks, use_timeStamps, use_uppercase) == -1)
 			{
 				plugin_config.log_print("\n\nError# Failed creating file: %s in PackFiles with error: %s",
@@ -570,6 +616,10 @@ extern "C" {
 			plugin_config.log_print("\n\nError# Failed opening file: %s in DeleteFiles -- bad_alloc",
 				PackedFile);
 			return E_NO_MEMORY;
+		}
+
+		if (!loc_arch->can_we_write_this_format) {
+			return E_NOT_SUPPORTED;
 		}
 
 		std::string SrcPathS{SrcPath ? SrcPath : ""};
@@ -672,6 +722,7 @@ extern "C" {
 		auto disks_set = parse_diskdefs_c(plugin_config.diskdefs_file_path.data());
 		img_type_sel_GUI_t img_type_sel_GUI(disks_set, {}, false);
 		plugin_config.image_format = img_type_sel_GUI.get_image_type();
+		image_format_loc = plugin_config.image_format;
 	} //-V773
 
 	DLLEXPORT int STDCALL GetPackerCaps() { // Remove PK_CAPS_BY_CONTENT? 

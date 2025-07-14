@@ -49,6 +49,7 @@ private:
     HWND hEditBoottrk;
     HWND hEditProbability;
     HWND hCheckSaveType;
+    HWND hCheckSaveTypeCur;
 
     HBRUSH hDialogBgBrush = nullptr;
 
@@ -57,6 +58,8 @@ private:
     bool ui_retry = false;
     minimal_fixed_string_t<33> image_type;
     bool show_probab = false;
+    bool save_disk_type_res = false; 
+    bool save_disk_type_for_cur_res = false;
 
     static HFONT hBoldFont;
     static HFONT hNormalFont;
@@ -200,6 +203,7 @@ private:
         hEditBoottrk = GetDlgItem(hDlg, IDC_EDIT_BOOTTRK);
         hEditProbability = GetDlgItem(hDlg, IDC_EDIT_PROBABILITY);
         hCheckSaveType = GetDlgItem(hDlg, IDC_CHECK_SAVE_TYPE);
+        hCheckSaveTypeCur = GetDlgItem(hDlg, IDC_CHECK_SAVE_TYPE_CUR);
         auto hStaticText = GetDlgItem(hDlg, IDC_STATIC_TITLE);
 
         // Debug: Check if controls were found
@@ -229,6 +233,7 @@ private:
         // Set checkbox state
         if (!show_probab) {
             Button_SetCheck(hCheckSaveType, BST_CHECKED);
+			Button_SetCheck(hCheckSaveTypeCur, BST_CHECKED);
         }
 
         // Hide probability field if not needed
@@ -260,6 +265,8 @@ private:
             if (idx >= 0 && idx < static_cast<int>(possible_fmts.size())) {
                 image_type = possible_fmts[idx].fmt_name;
                 ui_retry = true;
+                save_disk_type_for_cur_res = (Button_GetCheck(hCheckSaveTypeCur) == BST_CHECKED);
+                save_disk_type_res = (Button_GetCheck(hCheckSaveType) == BST_CHECKED);
                 EndDialog(hDlg, IDOK);
             }
         }
@@ -342,9 +349,12 @@ public:
     }
 
     bool save_disk_type() const {
-        return Button_GetCheck(hCheckSaveType) == BST_CHECKED;
+        return save_disk_type_res;
     }
 
+    bool save_disk_type_for_cur() const {
+        return save_disk_type_for_cur_res;
+    }
     auto get_image_type() const {
         return image_type;
     }

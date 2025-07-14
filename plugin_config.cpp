@@ -194,11 +194,13 @@ bool plugin_config_t::write_conf()
 #endif 
     fprintf(cf, "allow_dialogs=%x\n", allow_dialogs);
     fprintf(cf, "allow_txt_log=%x\n", allow_txt_log);
-    log_file_path.push_back("D:\\Temp\\cpmimg.txt");
+    // log_file_path.clear();
+    // log_file_path.push_back("D:\\Temp\\cpmimg.txt");
     fprintf(cf, "log_file_path=%s\n", log_file_path.data());
     fprintf(cf, "debug_level=%x\n\n", debug_level);
     fprintf(cf, "image_format=%s\n", "osbexec1");
-    fprintf(cf, "diskdefs_file_path=%s\n", (diskdefs_file_path+"\\diskdefs").data());
+    // fprintf(cf, "diskdefs_file_path=%s\n", (diskdefs_file_path+"\\diskdefs").data());
+    fprintf(cf, "diskdefs_file_path=%s\n", diskdefs_file_path.data());
 
     std::fclose(cf);
     return true;

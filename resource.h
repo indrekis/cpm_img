@@ -1,7 +1,3 @@
-//{{NO_DEPENDENCIES}}
-// Microsoft Visual C++ generated include file.
-// Used by cpmimg_plugin_gui.rc
-//
 #define SW_HIDE                         0
 #define HIDE_WINDOW                     0
 #define WM_NULL                         0x0000
@@ -1262,6 +1258,7 @@
 #define IDC_EDIT_BOOTTRK                1008
 #define IDC_EDIT_PROBABILITY            1009
 #define IDC_CHECK_SAVE_TYPE             1010
+#define IDC_CHECK_SAVE_TYPE_CUR         1011
 #define CF_GDIOBJLAST                   0x03FF
 #define _WIN32_WINNT_NT4                0x0400
 #define _WIN32_IE_IE40                  0x0400

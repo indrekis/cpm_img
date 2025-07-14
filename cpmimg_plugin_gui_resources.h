@@ -14,6 +14,7 @@
 #define IDC_EDIT_BOOTTRK        1008
 #define IDC_EDIT_PROBABILITY    1009
 #define IDC_CHECK_SAVE_TYPE     1010
+#define IDC_CHECK_SAVE_TYPE_CUR 1011
 
 // Static labels
 #define IDC_STATIC_TITLE        2001
