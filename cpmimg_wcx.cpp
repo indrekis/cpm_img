@@ -249,21 +249,27 @@ private:
 			close_file(hArchFile);
 			plugin_config.log_print("\n\nError# Failed reading superblock.");
 			while (true) {
-				img_type_sel_GUI_t img_type_sel_GUI(possible_fmts, geom, true);				
+				img_type_sel_GUI_t* img_type_sel_GUI;
+				if(!possible_fmts.empty()) {
+					img_type_sel_GUI = new img_type_sel_GUI_t(possible_fmts, geom, true);
+				}
+				else {
+					img_type_sel_GUI = new img_type_sel_GUI_t(disks_set, geom, true); // Add something to GUI to notify user about this
+				}
 
-				if(!img_type_sel_GUI.attempt_new_read())
+				if(!img_type_sel_GUI->attempt_new_read())
 					break;
 
-				if ( img_type_sel_GUI.save_disk_type_for_cur() || img_type_sel_GUI.save_disk_type() ) {
-					plugin_config.image_format = img_type_sel_GUI.get_image_type(); 
+				if ( img_type_sel_GUI->save_disk_type_for_cur() || img_type_sel_GUI->save_disk_type() ) {
+					plugin_config.image_format = img_type_sel_GUI->get_image_type();
 					image_format_loc = plugin_config.image_format;
 				}
-				if (img_type_sel_GUI.save_disk_type()) {
+				if (img_type_sel_GUI->save_disk_type()) {
 					plugin_config.write_conf();					
 				}
 				
 				erri = cpmReadSuper(&super, &root,
-					img_type_sel_GUI.get_image_type().data(),
+					img_type_sel_GUI->get_image_type().data(),
 					use_uppercase);
 				if (erri == -1)
 				{
@@ -419,7 +425,8 @@ extern "C" {
 		if (hUnpFile == file_open_error_v)
 			return E_ECREATE;
 
-		if (nres == -1) { // In fact, already dangerous...
+		//! file_ino.size !=0 -- hack for some representations of extents of the empty files
+		if (nres == -1 && file_ino.size !=0 ) { // In fact, already dangerous...
 			// TCmd крашитьс€ тут, €кщо повторно, не виход€чи з арх≥ва, знову спробувати прочитати файл. 
 			// але достатньо вийти-зайти -- очищати кеш, заход€чи в ≥нший арх≥в, не потр≥бно...
 			plugin_config.log_print("\n\nError# Failed opening file %s in archive %s in ProcessFile/cpmNamei",
@@ -427,24 +434,25 @@ extern "C" {
 			close_file(hUnpFile);
 			return E_BAD_DATA;
 		}
-        auto buf = std::make_unique<char[]>(file_ino.size);
-		// std::unique_ptr<char[]> buf{ new char[file_ino.size] };
-		auto ores = cpmOpen(&file_ino, &file, O_RDONLY);
-		if (ores == -1) {
-			plugin_config.log_print("\n\nError# Failed opening file %s in archive %s in ProcessFile/cpmOpen",
-				dirent_raw_ptr, hArcData->archname);
-			close_file(hUnpFile);
-			return E_BAD_DATA;
+		if (file_ino.size != 0) {
+			auto buf = std::make_unique<char[]>(file_ino.size);
+			// std::unique_ptr<char[]> buf{ new char[file_ino.size] };
+			auto ores = cpmOpen(&file_ino, &file, O_RDONLY);
+			if (ores == -1) {
+				plugin_config.log_print("\n\nError# Failed opening file %s in archive %s in ProcessFile/cpmOpen",
+					dirent_raw_ptr, hArcData->archname);
+				close_file(hUnpFile);
+				return E_BAD_DATA;
+			}
+			auto rres = cpmRead(&file, buf.get(), file_ino.size);
+
+			write_file(hUnpFile, buf.get(), file_ino.size);
 		}
-		auto rres = cpmRead(&file, buf.get(), file_ino.size);
 
-		write_file(hUnpFile, buf.get(), file_ino.size);
-
-		if(file_ino.mtime != 0 )
+		if (file_ino.mtime != 0)
 			set_file_datetime(hUnpFile, file_ino.mtime); // TODO: Check and fix
 		close_file(hUnpFile);
-		set_file_attributes_cpm(dest, file_ino.attr );
-
+		set_file_attributes_cpm(dest, file_ino.attr);		
 		if (Operation == PK_TEST) {
 			delete_file(dest);
 		}
