@@ -169,8 +169,8 @@ private:
 
 		err = dsk_getgeom(driver, &geom);
 		if (err) {
-			throw disk_err_t{ "Error reading image geometry.", E_EOPEN };
 			dsk_close(&driver);
+			throw disk_err_t{ "Error reading image geometry.", E_EOPEN };
 		}
 		dsk_close(&driver);
 		//=================================================================
