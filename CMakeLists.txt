@@ -31,8 +31,10 @@ cpmimg_plugin_gui.cpp cpmimg_plugin_gui.h cpmimg_plugin_gui.rc cpmimg_plugin_gui
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)	
 	set(SOURCE_FILES ${SOURCE_FILES} cpmimg_64.def)
+	set(BITTNES_SUFIX "")
 elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 	set(SOURCE_FILES ${SOURCE_FILES} cpmimg_32.def)
+	set(BITTNES_SUFIX "_32")
 endif()
 
 add_library(cpmimg_wcx SHARED ${SOURCE_FILES} )
@@ -43,26 +45,15 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 	set_target_properties(cpmimg_wcx PROPERTIES SUFFIX .wcx PREFIX "") 	
 endif()
 
-target_link_libraries(cpmimg_wcx PRIVATE cpmfs libdsk) 
+target_link_libraries(cpmimg_wcx PRIVATE cpmfs libdsk${BITTNES_SUFIX}) 
 
 # target_compile_options(cpmimg_wcx PRIVATE "/fsanitize=address") # RTC1 - x86 only?
 
 add_executable(cpmls cpmtools/cpmls.c  cpmtools/getopt.c)
-target_link_libraries(cpmls cpmfs libdsk)
+target_link_libraries(cpmls cpmfs libdsk${BITTNES_SUFIX})
 
 add_executable(mkfs.cpm cpmtools/mkfs.cpm.c  cpmtools/getopt.c)
-target_link_libraries(mkfs.cpm cpmfs libdsk)
+target_link_libraries(mkfs.cpm cpmfs libdsk${BITTNES_SUFIX})
 
-
-if( DEFINED FLTK_ENABLED_EXPERIMENTAL)
-find_package(FLTK CONFIG)
-
-if( FLTK_FOUND )
-target_compile_definitions(cpmimg_wcx PRIVATE -DFLTK_ENABLED_EXPERIMENTAL=1)
-target_include_directories(cpmimg_wcx PRIVATE ${FLTK_INCLUDE_DIR})
-target_link_libraries(cpmimg_wcx PRIVATE fltk fltk_gl fltk_forms fltk_images)
-endif()
-
-endif()
 
 # https://www.ghisler.ch/wiki/index.php?title=Plugins_Automated_Installation

@@ -80,7 +80,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 		auto rdconf = plugin_config.read_conf(nullptr, true);
 		g_GUI_dlg_hInstance = hModule;
 	}
-		break;
+		break; 
 	case DLL_PROCESS_DETACH:
 		break;
 	case DLL_THREAD_ATTACH:

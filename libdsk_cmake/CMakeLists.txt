@@ -12,6 +12,13 @@ endif()
 
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)	
+	set(BITTNES_SUFIX "")
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
+	set(BITTNES_SUFIX "_32")
+endif()
+
+
 
 set(dsk_LIB_SRCS
 
@@ -151,17 +158,16 @@ lib/w95defs.h
 find_package(ZLIB REQUIRED)
 find_package(BZip2 REQUIRED)
 
-add_library(libdsk SHARED ${dsk_LIB_SRCS})
+add_library(libdsk${BITTNES_SUFIX} SHARED ${dsk_LIB_SRCS})
 include_directories(${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${BZIP2_INCLUDE_DIRS})
 
-target_link_libraries(libdsk ZLIB::ZLIB BZip2::BZip2)
+target_link_libraries(libdsk${BITTNES_SUFIX} ZLIB::ZLIB BZip2::BZip2)
+
+set_target_properties(libdsk${BITTNES_SUFIX} PROPERTIES VERSION 3.3.13 SOVERSION 3)
+add_compile_definitions(libdsk${BITTNES_SUFIX} LIBDSK_EXPORTS)
 
 
-set_target_properties(libdsk PROPERTIES VERSION 3.3.13 SOVERSION 3)
-add_compile_definitions(libdsk LIBDSK_EXPORTS)
-
-
-install(TARGETS libdsk ${INSTALL_TARGETS_DEFAULT_ARGS})
+install(TARGETS libdsk${BITTNES_SUFIX} ${INSTALL_TARGETS_DEFAULT_ARGS})
 
 #-------------------------------------------------------------------
 
@@ -176,7 +182,7 @@ set(dsktrans_SRCS
 
 add_executable(dsktrans  ${dsktrans_SRCS} )
 
-target_link_libraries(dsktrans libdsk  ZLIB::ZLIB BZip2::BZip2)
+target_link_libraries(dsktrans libdsk${BITTNES_SUFIX}  ZLIB::ZLIB BZip2::BZip2)
 
 install(TARGETS dsktrans ${INSTALL_TARGETS_DEFAULT_ARGS})
 
@@ -191,7 +197,7 @@ set(dskform_SRCS
 
 add_executable(dskform  ${dskform_SRCS} )
 
-target_link_libraries(dskform libdsk  ZLIB::ZLIB BZip2::BZip2)
+target_link_libraries(dskform libdsk${BITTNES_SUFIX}  ZLIB::ZLIB BZip2::BZip2)
 
 install(TARGETS dskform ${INSTALL_TARGETS_DEFAULT_ARGS})
 
@@ -204,7 +210,7 @@ set(dskid_SRCS
 
 add_executable(dskid  ${dskid_SRCS} )
 
-target_link_libraries(dskid libdsk  ZLIB::ZLIB BZip2::BZip2)
+target_link_libraries(dskid libdsk${BITTNES_SUFIX}  ZLIB::ZLIB BZip2::BZip2)
 
 install(TARGETS dskid ${INSTALL_TARGETS_DEFAULT_ARGS})
 
@@ -218,7 +224,7 @@ set(dskdump_SRCS
 
 add_executable(dskdump  ${dskdump_SRCS} )
 
-target_link_libraries(dskdump libdsk  ZLIB::ZLIB BZip2::BZip2)
+target_link_libraries(dskdump libdsk${BITTNES_SUFIX}  ZLIB::ZLIB BZip2::BZip2)
 
 install(TARGETS dskdump ${INSTALL_TARGETS_DEFAULT_ARGS})
 

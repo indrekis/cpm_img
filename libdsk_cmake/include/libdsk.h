@@ -41,7 +41,8 @@
 #   define LDPUBLIC16
 #   define LDPUBLIC32
 #  else /* def NOTDLL */
-#   define LDPUBLIC16 __stdcall
+// #   define LDPUBLIC16 __stdcall
+#   define LDPUBLIC16 __cdecl
 #   ifdef LIBDSK_EXPORTS
 #    define LDPUBLIC32 __declspec(dllexport)
 #   else  /* def LIBDSK_EXPORTS */
