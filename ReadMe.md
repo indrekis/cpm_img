@@ -11,7 +11,7 @@
 
 # Introduction
 
-CPMimg is a wcx (archive) plugin for 64-bit ~~and 32-bit~~ Total Commander (TCmd) that provides read-write access to CP/M disk images.
+CPMimg is a wcx (archive) plugin for 64-bit and 32-bit Total Commander (TCmd) that provides read-write access to CP/M disk images.
 
 Key features:
 
@@ -32,7 +32,7 @@ As usual for the TCmd plugins:
    3. Open the '**Packer**' page
    4. Click '**Configure packer extension WCXs**'
    5. Type '*img*' as the extension
-   6. Click '**New type**', and select the *img.wcx64* (*img.wcx* for 32-bit TCmd)
+   6. Click '**New type**', and select the *cpmimg.wcx64* (*cpmimg.wcx* for 32-bit TCmd)
    7. Click **OK**
 - Automated installation:
    1. Open the archive containing the plugin directly in TCmd.
@@ -62,7 +62,7 @@ log_file_path=D:\Temp\cpmimg.txt
 debug_level=1
 
 image_format=osbexec1
-diskdefs_file_path=d:\totalcmd3\plugins32\wcx\img\diskdefs
+diskdefs_file_path=d:\totalcmd3\plugins32\wcx\cpmimg\diskdefs
 ```
 
 - `allow_dialogs==1` -- enable dialogs on some image peculiarities. 
@@ -94,7 +94,6 @@ The plugin is tested on several hundred floppy images.
 
 # Problems and limitations
 
-- Currently, there is only a 64-bit build, but 32-bit would not be a problem, though it requires some CMake files fiddling. 
 - Sometimes goes astray -- opens file "successfully" using the wrong format. Mainly, it is manifested by an image showing many user "folders". Users are a rarely used feature, anyway. 
 
 ## Non-problems but caveats
