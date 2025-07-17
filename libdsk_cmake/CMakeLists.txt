@@ -150,10 +150,10 @@ lib/txt2ldbs.c
 #lib/uk_co_demon_seasip_libdsk_Drive.h
 #lib/uk_co_demon_seasip_libdsk_FormatType.h
 #lib/uk_co_demon_seasip_libdsk_Geometry.h
-#lib/uk_co_demon_seasip_libdsk_LibDsk.h
+#lib/uk_co_demon_seasip_libdsk_LibDsk.h 
 lib/w16defs.h
-lib/w95defs.h
-)    
+lib/w95defs.h 
+)     
      
 find_package(ZLIB REQUIRED)
 find_package(BZip2 REQUIRED)
