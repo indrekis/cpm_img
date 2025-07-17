@@ -1,3 +1,8 @@
+/*
+* CP/M floppy disk images plugin for the Total Commander.
+* Copyright (c) 2022-2025, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
+*
+*/
 #pragma once
 
 // Dialog ID
