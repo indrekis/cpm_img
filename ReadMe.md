@@ -77,6 +77,8 @@ diskdefs_file_path=d:\totalcmd3\plugins32\wcx\img\diskdefs
 
 Code can be compiled using the Visual Studio project or CMakeLists.txt (tested using MSVC and MinGW). 
 
+For the coexistence of the 32-bit and 64-bit plugin and to minimize customization of the VCPKG-based build environment, the 32-bit version is currently built using the x86-windows-static triplet. 
+
 Uses C++20, with no obligatory external dependencies. 
 
 Examples of the command lines to compile using CMake are in the CMakeLists.txt.
