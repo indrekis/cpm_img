@@ -303,7 +303,7 @@ extern "C" {
 		//! Not used by TCmd yet.
 		ArchiveData->CmtBuf = 0;
 		ArchiveData->CmtBufSize = 0;
-		ArchiveData->CmtSize = 0;
+		ArchiveData->CmtSize = 0; 
 		ArchiveData->CmtState = 0;
 
 		try {
@@ -370,7 +370,7 @@ extern "C" {
 			HeaderData->PackSize = file_ino.size; // (statbuf.size+127)/128
 			HeaderData->UnpSize = HeaderData->PackSize;
 			HeaderData->CmtBuf = 0;
-			HeaderData->CmtBufSize = 0;
+			HeaderData->CmtBufSize = 0; 
 			HeaderData->CmtSize = 0;
 			HeaderData->CmtState = 0;
 			HeaderData->UnpVer = 0;

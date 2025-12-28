@@ -118,15 +118,6 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         return false; // Wrong configuration would be overwritten by default configuration.
     }
     try {
-#if 0
-        ignore_boot_signature = get_option_from_map<decltype(ignore_boot_signature)>("ignore_boot_signature"s);
-        use_VFAT = get_option_from_map<decltype(use_VFAT)>("use_VFAT"s);
-        process_DOS1xx_images = get_option_from_map<decltype(process_DOS1xx_images)>("process_DOS1xx_images"s);
-        process_MBR = get_option_from_map<decltype(process_MBR)>("process_MBR"s);
-        process_DOS1xx_exceptions = get_option_from_map<decltype(process_DOS1xx_exceptions)>("process_DOS1xx_exceptions"s);
-        search_for_boot_sector = get_option_from_map<decltype(search_for_boot_sector)>("search_for_boot_sector"s);
-        search_for_boot_sector_range = get_option_from_map<decltype(search_for_boot_sector_range)>("search_for_boot_sector_range"s);
-#endif 
         allow_dialogs = get_option_from_map<decltype(allow_dialogs)>("allow_dialogs"s);
         allow_txt_log = get_option_from_map<decltype(allow_txt_log)>("allow_txt_log"s);
         debug_level = get_option_from_map<decltype(debug_level)>("debug_level"s);
@@ -180,25 +171,18 @@ bool plugin_config_t::write_conf()
         return false;
     }
     fprintf(cf, "[CPM_disk_img_plugin]\n");
-#if 0
-    fprintf(cf, "ignore_boot_signature=%x\n", ignore_boot_signature);
-    fprintf(cf, "use_VFAT=%x\n", use_VFAT);
-    fprintf(cf, "process_DOS1xx_images=%x\n", process_DOS1xx_images);
-    fprintf(cf, "process_MBR=%x\n", process_MBR);
-    fprintf(cf, "# Highly specialized exceptions for the popular images found on the Internet:\n");
-    fprintf(cf, "process_DOS1xx_exceptions=%x\n", process_DOS1xx_exceptions);
-    fprintf(cf, "# WinImage-like behavior -- if boot is not on the beginning of the file, \n");
-    fprintf(cf, "# # search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA\n");
-    fprintf(cf, "search_for_boot_sector=%x\n", search_for_boot_sector);
-    fprintf(cf, "search_for_boot_sector_range=%zx\n", search_for_boot_sector_range);
-#endif 
+
     fprintf(cf, "allow_dialogs=%x\n", allow_dialogs);
     fprintf(cf, "allow_txt_log=%x\n", allow_txt_log);
     // log_file_path.clear();
     // log_file_path.push_back("D:\\Temp\\cpmimg.txt");
+    if(log_file_path.is_empty())
+		log_file_path.push_back(config_file_path + "\\cpmimg.log");
     fprintf(cf, "log_file_path=%s\n", log_file_path.data());
     fprintf(cf, "debug_level=%x\n\n", debug_level);
     fprintf(cf, "image_format=%s\n", "osbexec1");
+    if (diskdefs_file_path.is_empty())
+        diskdefs_file_path.push_back("diskdefs");
     // fprintf(cf, "diskdefs_file_path=%s\n", (diskdefs_file_path+"\\diskdefs").data());
     fprintf(cf, "diskdefs_file_path=%s\n", diskdefs_file_path.data());
 
