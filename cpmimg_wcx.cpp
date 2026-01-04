@@ -2,7 +2,7 @@
 // PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
 /*
 * CP/M floppy disk images plugin for the Total Commander.
-* Copyright (c) 2022-2025, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
+* Copyright (c) 2022-2026, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
 *
 */
 
@@ -415,7 +415,7 @@ extern "C" {
 		cpmInode file_ino;
 		auto dirent_raw_ptr = hArcData->gargv[hArcData->curren_file_counter - 1];
 		auto nres = cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
-		// If we got this far, for errors different than E_ECREATE, TCmd expects file shold exist
+		// If we got this far, for errors different than E_ECREATE, TCmd expects file should exist
 		if (Operation == PK_TEST) {
 			hUnpFile = open_file_overwrite(dest);
 		}

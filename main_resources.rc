@@ -1,6 +1,6 @@
 /*
 * CP/M floppy disk images plugin for the Total Commander.
-* Copyright (c) 2022-2025, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
+* Copyright (c) 2022-2026, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
 *
 */
 // Microsoft Visual C++ generated resource script.
@@ -52,7 +52,7 @@ BEGIN
             VALUE "FileDescription", "CP/M images wcx plugin for Total Commander"
             VALUE "FileVersion", "0.9.0.0"
             VALUE "InternalName", "N/A"
-            VALUE "LegalCopyright", "Copyright © 2022-2025 by Oleg Farenyuk"
+            VALUE "LegalCopyright", "Copyright © 2022-2026 by Oleg Farenyuk"
             VALUE "LegalTrademarks", "N/A"
             VALUE "OriginalFilename", "cpmimg.wcx64"
             VALUE "PrivateBuild", "N/A"

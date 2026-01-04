@@ -177,7 +177,7 @@ bool plugin_config_t::write_conf()
     // log_file_path.clear();
     // log_file_path.push_back("D:\\Temp\\cpmimg.txt");
     if(log_file_path.is_empty())
-		log_file_path.push_back(config_file_path + "\\cpmimg.log");
+		log_file_path.push_back(config_file_path + "\\cpmimg.log"); // TODO: Fix -- use base path
     fprintf(cf, "log_file_path=%s\n", log_file_path.data());
     fprintf(cf, "debug_level=%x\n\n", debug_level);
     fprintf(cf, "image_format=%s\n", "osbexec1");
