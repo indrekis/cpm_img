@@ -74,6 +74,7 @@ const char *Device_open(struct Device *this, const char *filename, int mode, con
 const char *Device_setGeometry(struct Device *this, int secLength, int sectrk, int tracks, off_t offset, const char *libdskGeometry)
 {
   char *boo;
+  int probeOk;
 
   this->secLength=secLength;
   this->sectrk=sectrk;
@@ -86,22 +87,35 @@ const char *Device_setGeometry(struct Device *this, int secLength, int sectrk, i
   {
     return lookupFormat(&this->geom, libdskGeometry);
   }
-  
-  this->geom.dg_secsize   = secLength;
-  this->geom.dg_sectors   = sectrk;
+
   /* Did the autoprobe guess right about the number of sectors & cylinders? */
-  if (this->geom.dg_cylinders * this->geom.dg_heads == tracks) return NULL;
-  /* Otherwise we guess: <= 43 tracks: single-sided. Else double. This
-   * fails for 80-track single-sided if there are any such beasts */
-  if (tracks <= 43) 
+  if (this->geom.dg_cylinders * this->geom.dg_heads == tracks)
+  {
+    probeOk = 1;
+  }
+  else
+  {
+    /* Reset the complete LibDsk geometry. Otherwise fields such as
+     * dg_sidedness may survive a false-positive boot-sector probe. */
+    probeOk = 0;
+    dg_stdformat(&this->geom, FMT_180K, NULL, NULL);
+  }
+
+  this->geom.dg_secsize = secLength;
+  this->geom.dg_sectors = sectrk;
+  if (probeOk) return NULL;
+
+  /* Otherwise guess: <= 43 tracks is single-sided, else double-sided.
+   * This still cannot describe an 80-track single-sided image. */
+  if (tracks <= 43)
   {
     this->geom.dg_cylinders = tracks;
-    this->geom.dg_heads     = 1; 
+    this->geom.dg_heads     = 1;
   }
   else
   {
     this->geom.dg_cylinders = tracks/2;
-    this->geom.dg_heads     = 2; 
+    this->geom.dg_heads     = 2;
   }
   return NULL;
 }
