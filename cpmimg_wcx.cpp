@@ -117,6 +117,31 @@ public:
 };
 
 
+class device_open_guard_t {
+    Device* device_ = nullptr;
+
+public:
+    explicit device_open_guard_t(Device& device) noexcept
+        : device_(&device)
+    {
+    }
+
+    device_open_guard_t(const device_open_guard_t&) = delete;
+    device_open_guard_t& operator=(const device_open_guard_t&) = delete;
+
+    ~device_open_guard_t() noexcept
+    {
+        if (device_ && device_->opened) {
+            (void)Device_close(device_);
+        }
+    }
+
+    void release() noexcept
+    {
+        device_ = nullptr;
+    }
+};
+
 struct whole_disk_t {
 	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
 	file_handle_t hArchFile = file_handle_t(); //opened file handles
@@ -137,8 +162,8 @@ struct whole_disk_t {
 	tChangeVolProc   pLocChangeVol = nullptr;
 	tProcessDataProc pLocProcessData = nullptr;
 
-	cpmSuperBlock super;
-	cpmInode root;
+	cpmSuperBlock super{};
+	cpmInode root{};
 	minimal_fixed_string_t<33> image_format;
 	// std::string format{FORMAT}; //  osb1sssd, osbexec1
 	// struct cpmInode root;
@@ -231,6 +256,7 @@ private:
 		}
 		//=================================================================
 
+		device_open_guard_t device_guard{super.dev};
 		const char* errs = Device_open(&super.dev, archname.data(), read_only ? O_RDONLY : O_RDWR,
 			driver_name.empty() ? nullptr : driver_name.c_str());
 
@@ -248,12 +274,12 @@ private:
 			close_file(hArchFile);
 			plugin_config.log_print("\n\nError# Failed reading superblock: %s", boo ? boo : "unknown error");
 			while (true) {
-				img_type_sel_GUI_t* img_type_sel_GUI;
+				std::unique_ptr<img_type_sel_GUI_t> img_type_sel_GUI;
 				if(!possible_fmts.empty()) {
-					img_type_sel_GUI = new img_type_sel_GUI_t(possible_fmts, geom, true);
+					img_type_sel_GUI = std::make_unique<img_type_sel_GUI_t>(possible_fmts, geom, true);
 				}
 				else {
-					img_type_sel_GUI = new img_type_sel_GUI_t(disks_set, geom, true); // Add something to GUI to notify user about this
+					img_type_sel_GUI = std::make_unique<img_type_sel_GUI_t>(disks_set, geom, true); // Add something to GUI to notify user about this
 				}
 
 				if(!img_type_sel_GUI->attempt_new_read())
@@ -283,6 +309,7 @@ private:
 			if (erri == -1)
 				throw disk_err_t{ "Error in cpmReadSuper.", E_EOPEN };
 		}
+		device_guard.release();
 	}
 };
 //------- whole_disk_t implementation --------------------------
