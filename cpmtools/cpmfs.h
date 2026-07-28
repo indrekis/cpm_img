@@ -168,6 +168,7 @@ void cpmglob(int opti, int argc, char * const argv[], struct cpmInode *root, int
 void cpmglobfree(char **dirent, int entries);
 
 int cpmReadSuper(struct cpmSuperBlock *drive, struct cpmInode *root, const char *format, int uppercase);
+void cpmDiscardSuper(struct cpmSuperBlock *drive);
 int cpmNamei(const struct cpmInode *dir, const char *filename, struct cpmInode *i);
 void cpmStatFS(const struct cpmInode *ino, struct cpmStatFS *buf);
 int cpmUnlink(const struct cpmInode *dir, const char *fname);

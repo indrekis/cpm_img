@@ -1465,6 +1465,25 @@ int cpmSync(struct cpmSuperBlock *sb)
   return 0;
 }
 /*}}}*/
+
+/* cpmDiscardSuper -- discard a partial mount without writing it */ /*{{{*/
+void cpmDiscardSuper(struct cpmSuperBlock *sb)
+{
+  if (sb==(struct cpmSuperBlock*)0) return;
+
+  /* A failed format probe is read-only state. Never call cpmSync here. */
+  if (sb->dev.opened) (void)Device_close(&sb->dev);
+
+  free(sb->ds);
+  free(sb->alv);
+  free(sb->skewtab);
+  free(sb->dir);
+  free(sb->label);
+  free(sb->passwd);
+
+  memset(sb,0,sizeof(*sb));
+}
+/*}}}*/
 /* cpmUmount          -- free super block                        */ /*{{{*/
 int cpmUmount(struct cpmSuperBlock *sb)
 {

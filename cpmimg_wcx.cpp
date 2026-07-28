@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <optional>
 #include <map>
+#include <mutex>
 #include <cassert>
 
 
@@ -63,6 +64,67 @@ using std::nothrow, std::uint8_t;
 char const cmd[] = "cpmimg_wcx";
 
 plugin_config_t plugin_config;
+
+namespace {
+// CPMIMG_SESSION_FORMAT_CACHE_V2
+//
+// Total Commander may close an archive handle after listing and open
+// the same image again for F3/F5. Therefore the selected format must
+// be cached by image path even when neither persistence checkbox is
+// selected.
+std::mutex session_image_format_mutex;
+std::map<std::string, minimal_fixed_string_t<33>>
+    session_image_formats_by_archive;
+minimal_fixed_string_t<33> session_default_image_format;
+
+std::string normalized_archive_key(const char* archive_name)
+{
+    std::string key = archive_name ? archive_name : "";
+    std::transform(
+        key.begin(),
+        key.end(),
+        key.begin(),
+        [](unsigned char ch) -> char {
+            if (ch == '/')
+                return '\\';
+            return static_cast<char>(std::tolower(ch));
+        });
+    return key;
+}
+
+minimal_fixed_string_t<33> effective_image_format_for_archive(
+    const char* archive_name)
+{
+    std::lock_guard<std::mutex> lock(session_image_format_mutex);
+
+    const auto key = normalized_archive_key(archive_name);
+    const auto found = session_image_formats_by_archive.find(key);
+    if (found != session_image_formats_by_archive.end())
+        return found->second;
+
+    if (!session_default_image_format.is_empty())
+        return session_default_image_format;
+
+    return plugin_config.image_format;
+}
+
+void remember_image_format_for_archive(
+    const char* archive_name,
+    const minimal_fixed_string_t<33>& image_format)
+{
+    std::lock_guard<std::mutex> lock(session_image_format_mutex);
+    session_image_formats_by_archive[
+        normalized_archive_key(archive_name)] = image_format;
+}
+
+void remember_image_format_for_session(
+    const minimal_fixed_string_t<33>& image_format)
+{
+    std::lock_guard<std::mutex> lock(session_image_format_mutex);
+    session_default_image_format = image_format;
+}
+} // namespace
+
 
 // extern HINSTANCE g_GUI_dlg_hInstance;
 
@@ -184,7 +246,7 @@ struct whole_disk_t {
 		openmode_m(openmode), image_file_size(vol_size), read_only{ read_only_in }
 	{
 		archname.push_back(archname_in);
-		image_format = plugin_config.image_format;
+		image_format = effective_image_format_for_archive(archname.data());
 		process_image();
 	}
 
@@ -306,58 +368,116 @@ private:
 		}
 		//=================================================================
 		device_open_guard_t device_guard{super.dev};
-		const char* errs = Device_open(&super.dev, archname.data(), read_only ? O_RDONLY : O_RDWR,
-			driver_name.empty() ? nullptr : driver_name.c_str());
 
-		if (errs) // Pointer to error string 
-		{
-			close_file(hArchFile);
-			plugin_config.log_print("\n\nError# Failed opening file: %s", errs);
-			throw disk_err_t{ "Error in Device_open.", E_EOPEN };
-		}
-		int erri = cpmReadSuper(&super, &root,
-			image_format.is_empty() ? nullptr : image_format.data(),
-			use_uppercase);
+		// CPMIMG_TRANSACTIONAL_FORMAT_RETRY
+		// cpmReadSuper() mutates cpmSuperBlock and Device geometry before it
+		// knows whether the selected format is valid. Therefore every format
+		// attempt must start from a fully discarded superblock and a newly
+		// opened LibDsk device.
+		auto mount_with_format = [&](const char* format) -> int {
+			cpmDiscardSuper(&super);
+			root = {};
+
+			const char* open_error = Device_open(
+				&super.dev,
+				archname.data(),
+				read_only ? O_RDONLY : O_RDWR,
+				driver_name.empty() ? nullptr : driver_name.c_str());
+
+			if (open_error) {
+				plugin_config.log_print(
+					"\n\nError# Failed opening file: %s",
+					open_error);
+				throw disk_err_t{
+					"Error in Device_open.",
+					E_EOPEN
+				};
+			}
+
+			return cpmReadSuper(
+				&super,
+				&root,
+				format,
+				use_uppercase);
+		};
+
+		int erri = mount_with_format(
+			image_format.is_empty() ? nullptr : image_format.data());
+
 		if (erri == -1)
 		{
-			close_file(hArchFile);
-			plugin_config.log_print("\n\nError# Failed reading superblock: %s", boo ? boo : "unknown error");
+			plugin_config.log_print(
+				"\n\nError# Failed reading superblock: %s",
+				boo ? boo : "unknown error");
+
 			while (true) {
 				std::unique_ptr<img_type_sel_GUI_t> img_type_sel_GUI;
-				if(!possible_fmts.empty()) {
-					img_type_sel_GUI = std::make_unique<img_type_sel_GUI_t>(possible_fmts, geom, true, geometry_reliable, image_payload_size);
+				if (!possible_fmts.empty()) {
+					img_type_sel_GUI =
+						std::make_unique<img_type_sel_GUI_t>(
+							possible_fmts,
+							geom,
+							true,
+							geometry_reliable,
+							image_payload_size);
 				}
 				else {
-					img_type_sel_GUI = std::make_unique<img_type_sel_GUI_t>(disks_set, geom, true, geometry_reliable, image_payload_size); // Add something to GUI to notify user about this
+					img_type_sel_GUI =
+						std::make_unique<img_type_sel_GUI_t>(
+							disks_set,
+							geom,
+							true,
+							geometry_reliable,
+							image_payload_size);
 				}
 
-				if(!img_type_sel_GUI->attempt_new_read())
+				if (!img_type_sel_GUI->attempt_new_read())
 					break;
 
-				const auto selected_image_format = img_type_sel_GUI->get_image_type();
+				const auto selected_image_format =
+					img_type_sel_GUI->get_image_type();
+
+				erri = mount_with_format(selected_image_format.data());
+				if (erri == -1)
+				{
+					plugin_config.log_print(
+						"\n\nError# Failed reading superblock "
+						"with format %s: %s",
+						selected_image_format.data(),
+						boo ? boo : "unknown error");
+					continue;
+				}
+
+				// Commit format state only after a successful fresh mount.
+				image_format = selected_image_format;
+				remember_image_format_for_archive(
+					archname.data(),
+					selected_image_format);
+
 				if (img_type_sel_GUI->save_disk_type_for_cur() ||
 					img_type_sel_GUI->save_disk_type()) {
-					image_format = selected_image_format;
+					remember_image_format_for_session(
+						selected_image_format);
 				}
+
 				if (img_type_sel_GUI->save_disk_type()) {
 					plugin_config.image_format = selected_image_format;
 					plugin_config.write_conf();
 				}
-				
-				erri = cpmReadSuper(&super, &root,
-					selected_image_format.data(),
-					use_uppercase);
-				if (erri == -1)
-				{
-					plugin_config.log_print("\n\nError# Failed reading superblock: %s", boo ? boo : "unknown error");
-				}
-				else
-					break;
 
-			} //-V773
-			if (erri == -1)
-				throw disk_err_t{ "Error in cpmReadSuper.", E_EOPEN };
+				break;
+			}
+
+			if (erri == -1) {
+				cpmDiscardSuper(&super);
+				root = {};
+				throw disk_err_t{
+					"Error in cpmReadSuper.",
+					E_EOPEN
+				};
+			}
 		}
+
 		device_guard.release();
 	}
 };
@@ -649,7 +769,7 @@ extern "C" {
 	}
 
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
-		const auto image_format = plugin_config.image_format;
+		const auto image_format = effective_image_format_for_archive(PackedFile);
 		// PK_PACK_MOVE_FILES         1 Delete original after packing
 		// PK_PACK_SAVE_PATHS         2 Save path names of files
 		// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
@@ -809,7 +929,9 @@ extern "C" {
 		img_type_sel_GUI_t img_type_sel_GUI(disks_set, {}, false);
 		if (!img_type_sel_GUI.attempt_new_read())
 			return;
-		plugin_config.image_format = img_type_sel_GUI.get_image_type();
+		const auto selected_image_format = img_type_sel_GUI.get_image_type();
+		remember_image_format_for_session(selected_image_format);
+		plugin_config.image_format = selected_image_format;
 		plugin_config.write_conf();
 	} //-V773
 
