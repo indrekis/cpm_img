@@ -5,7 +5,7 @@ project(libdsk)
 
 # add_subdirectory(tools) 
 
-if(VCPKG_TOOLCHAIN) # MSVC
+if(MSVC) # MSVC
     SET(CMAKE_C_FLAGS  "/wd4996") #_SCL_SECURE_NO_WARNINGS
     include_directories(${PROJECT_SOURCE_DIR}/msvc_dirent)
 endif()
@@ -158,16 +158,15 @@ lib/w95defs.h
 find_package(ZLIB REQUIRED)
 find_package(BZip2 REQUIRED)
 
-add_library(libdsk${BITTNES_SUFIX} SHARED ${dsk_LIB_SRCS})
+add_library(libdsk${BITTNES_SUFIX} STATIC ${dsk_LIB_SRCS})
 include_directories(${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${BZIP2_INCLUDE_DIRS})
 
 target_link_libraries(libdsk${BITTNES_SUFIX} ZLIB::ZLIB BZip2::BZip2)
 
 set_target_properties(libdsk${BITTNES_SUFIX} PROPERTIES VERSION 3.3.13 SOVERSION 3)
-add_compile_definitions(libdsk${BITTNES_SUFIX} LIBDSK_EXPORTS)
+target_compile_definitions(libdsk${BITTNES_SUFIX} PUBLIC NOTWINDLL)
 
 
-install(TARGETS libdsk${BITTNES_SUFIX} ${INSTALL_TARGETS_DEFAULT_ARGS})
 
 #-------------------------------------------------------------------
 

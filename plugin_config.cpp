@@ -3,7 +3,8 @@
 /*
 * Copyright (c) 2017-2025, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
 *
-* The code is released under the MIT License.
+* SPDX-License-Identifier: GPL-3.0-only
+* This file is part of CPMimg and is licensed under GNU GPL v3; see LICENSE.txt.
 */
 
 #include "plugin_config.h"
@@ -91,6 +92,40 @@ T plugin_config_t::get_option_from_map(const std::string& option_name) const {
 }
 
 
+
+void plugin_config_t::set_default_diskdefs_path()
+{
+    if (diskdefs_file_path.is_empty()) {
+        diskdefs_file_path.push_back(plugin_path);
+        if (!diskdefs_file_path.is_empty() &&
+            diskdefs_file_path[diskdefs_file_path.size() - 1] !=
+                get_path_separator()) {
+            diskdefs_file_path.push_back(get_path_separator());
+        }
+        diskdefs_file_path.push_back("diskdefs");
+        return;
+    }
+
+    const bool is_absolute =
+        diskdefs_file_path[0] == '\\' ||
+        diskdefs_file_path[0] == '/' ||
+        (diskdefs_file_path.size() >= 2 &&
+            diskdefs_file_path[1] == ':');
+    if (is_absolute) {
+        return;
+    }
+
+    const auto relative_path = diskdefs_file_path;
+    diskdefs_file_path.clear();
+    diskdefs_file_path.push_back(plugin_path);
+    if (!diskdefs_file_path.is_empty() &&
+        diskdefs_file_path[diskdefs_file_path.size() - 1] !=
+            get_path_separator()) {
+        diskdefs_file_path.push_back(get_path_separator());
+    }
+    diskdefs_file_path.push_back(relative_path);
+}
+
 bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
 {
     std::setlocale(LC_ALL, "");
@@ -109,6 +144,7 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
 
     std::FILE* cf = std::fopen( config_file_path.data(), "r");
     if (!cf) {
+        set_default_diskdefs_path();
         return false; // Use default configuration
     }
 
@@ -124,6 +160,7 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         auto cfp = get_option_from_map<std::string>("diskdefs_file_path"s);
         diskdefs_file_path.clear();
 		diskdefs_file_path.push_back(cfp.data());
+		set_default_diskdefs_path();
 
 		diskdefs_path = diskdefs_file_path.data(); 
 
@@ -181,8 +218,7 @@ bool plugin_config_t::write_conf()
     fprintf(cf, "log_file_path=%s\n", log_file_path.data());
     fprintf(cf, "debug_level=%x\n\n", debug_level);
     fprintf(cf, "image_format=%s\n", image_format.is_empty() ? "osbexec1" : image_format.data());
-    if (diskdefs_file_path.is_empty())
-        diskdefs_file_path.push_back("diskdefs");
+    set_default_diskdefs_path();
     // fprintf(cf, "diskdefs_file_path=%s\n", (diskdefs_file_path+"\\diskdefs").data());
     fprintf(cf, "diskdefs_file_path=%s\n", diskdefs_file_path.data());
 

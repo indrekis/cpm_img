@@ -6,6 +6,7 @@
 // Microsoft Visual C++ generated resource script.
 //
 #include "resource.h"
+#include "cpmimg_version.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
 /////////////////////////////////////////////////////////////////////////////
@@ -30,9 +31,15 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 // Version
 //
 
+#ifdef _WIN64
+#define CPMIMG_ORIGINAL_FILENAME "cpmimg.wcx64"
+#else
+#define CPMIMG_ORIGINAL_FILENAME "cpmimg.wcx"
+#endif
+
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,9,0,0
- PRODUCTVERSION 0,9,0,0
+ FILEVERSION CPMIMG_VERSION_COMMA
+ PRODUCTVERSION CPMIMG_VERSION_COMMA
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x29L
@@ -50,14 +57,14 @@ BEGIN
             VALUE "Comments", "CP/M images unpacking plugin for Total Commander"
             VALUE "CompanyName", "Indrekis"
             VALUE "FileDescription", "CP/M images wcx plugin for Total Commander"
-            VALUE "FileVersion", "0.9.0.0"
+            VALUE "FileVersion", CPMIMG_VERSION_STRING
             VALUE "InternalName", "N/A"
-            VALUE "LegalCopyright", "Copyright © 2022-2026 by Oleg Farenyuk"
+            VALUE "LegalCopyright", "Copyright Â© 2022-2026 by Oleg Farenyuk"
             VALUE "LegalTrademarks", "N/A"
-            VALUE "OriginalFilename", "cpmimg.wcx64"
+            VALUE "OriginalFilename", CPMIMG_ORIGINAL_FILENAME
             VALUE "PrivateBuild", "N/A"
-            VALUE "ProductName", "TCmd FAT images wcx plugin"
-            VALUE "ProductVersion", "0.9 beta"
+            VALUE "ProductName", "CP/M image WCX plugin for Total Commander"
+            VALUE "ProductVersion", CPMIMG_VERSION_STRING
             VALUE "SpecialBuild", "N/A"
         END
     END

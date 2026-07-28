@@ -1,7 +1,8 @@
 /*
 * Copyright (c) 2017-2025, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
 *
-* The code is released under the MIT License.
+* SPDX-License-Identifier: GPL-3.0-only
+* This file is part of CPMimg and is licensed under GNU GPL v3; see LICENSE.txt.
 */
 #ifndef PLUGIN_CONFIG_H_INCLUDED
 #define PLUGIN_CONFIG_H_INCLUDED
@@ -47,6 +48,7 @@ struct plugin_config_t {
 	//------------------------------------------------------------
 	bool read_conf (const PackDefaultParamStruct* dps, bool reread);
 	bool write_conf();
+	void set_default_diskdefs_path();
 
 	minimal_fixed_string_t<33> image_format{"osbexec1"};
 private:

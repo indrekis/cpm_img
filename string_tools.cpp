@@ -3,7 +3,8 @@
 /*
 * Copyright (c) 2017-2025, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
 *
-* The code is released under the MIT License.
+* SPDX-License-Identifier: GPL-3.0-only
+* This file is part of CPMimg and is licensed under GNU GPL v3; see LICENSE.txt.
 */
 
 #include <algorithm>

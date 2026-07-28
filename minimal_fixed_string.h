@@ -2,7 +2,8 @@
 * Floppy disk images unpack plugin for the Total Commander.
 * Copyright (c) 2022-2026, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
 *
-* The code is released under the MIT License.
+* SPDX-License-Identifier: GPL-3.0-only
+* This file is part of CPMimg and is licensed under GNU GPL v3; see LICENSE.txt.
 */
 
 #pragma once

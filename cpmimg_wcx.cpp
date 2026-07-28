@@ -76,6 +76,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 	case DLL_PROCESS_ATTACH:
 	{
 		plugin_config.plugin_path = get_plugin_path(hModule);
+		plugin_config.set_default_diskdefs_path();
 		auto rdconf = plugin_config.read_conf(nullptr, true);
 		g_GUI_dlg_hInstance = hModule;
 	}

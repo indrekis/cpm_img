@@ -15,7 +15,47 @@
 # `warning LNK4098: defaultlib 'MSVCRT' conflicts with use of other libs fltk`
 
 cmake_minimum_required(VERSION 3.15)
-project(CPMimage)
+project(CPMimage VERSION 0.99 LANGUAGES C CXX)
+
+# BEGIN CPMIMG VERSION COMPONENT DEFAULTS
+set(CPMIMG_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
+set(CPMIMG_VERSION_MINOR "${PROJECT_VERSION_MINOR}")
+set(CPMIMG_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
+set(CPMIMG_VERSION_TWEAK "${PROJECT_VERSION_TWEAK}")
+
+if(CPMIMG_VERSION_PATCH STREQUAL "")
+    set(CPMIMG_VERSION_PATCH 0)
+endif()
+
+if(CPMIMG_VERSION_TWEAK STREQUAL "")
+    set(CPMIMG_VERSION_TWEAK 0)
+endif()
+# END CPMIMG VERSION COMPONENT DEFAULTS
+# BEGIN CPMIMG RELEASE PACKAGING
+if(MSVC)
+    # Keep the plugin and vendored LibDsk self-contained and compatible with
+    # the static vcpkg zlib/bzip2 triplets used by the release build.
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+set(CPMIMG_VERSION_TWEAK_VALUE "${PROJECT_VERSION_TWEAK}")
+if(CPMIMG_VERSION_TWEAK_VALUE STREQUAL "")
+    set(CPMIMG_VERSION_TWEAK_VALUE 0)
+endif()
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/pluginst.inf.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/pluginst.inf"
+    @ONLY
+)
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/packaging/cpmimg_version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/cpmimg_version.h"
+    @ONLY
+)
+# END CPMIMG RELEASE PACKAGING
+
 
 add_subdirectory(libdsk_cmake) 
 include_directories(${PROJECT_SOURCE_DIR}/libdsk_cmake/include)
@@ -26,6 +66,7 @@ add_compile_definitions(FORMAT="osbexec1")
 set(CMAKE_CXX_STANDARD 20)
 
 add_library(cpmfs STATIC cpmtools/device_libdsk.c cpmtools/cpmfs.c )
+target_compile_definitions(cpmfs PUBLIC NOTWINDLL)
 
 set(SOURCE_FILES cpmimg_wcx.cpp  minimal_fixed_string.h  resource.h  sysio_winapi.cpp  sysio_winapi.h wcxhead.h main_resources.rc
 string_tools.cpp string_tools.h plugin_config.cpp plugin_config.h 
@@ -49,6 +90,78 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 endif()
 
 target_link_libraries(cpmimg_wcx PRIVATE cpmfs libdsk${BITTNES_SUFIX}) 
+target_compile_definitions(cpmimg_wcx PRIVATE NOTWINDLL)
+
+# BEGIN CPMIMG INSTALL RULES
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(CPMIMG_PACKAGE_ARCH x64)
+else()
+    set(CPMIMG_PACKAGE_ARCH x86)
+endif()
+
+target_include_directories(
+    cpmimg_wcx
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+install(
+    TARGETS cpmimg_wcx
+    RUNTIME
+        DESTINATION .
+        COMPONENT cpmimg_runtime
+    LIBRARY
+        DESTINATION .
+        COMPONENT cpmimg_runtime
+)
+
+install(
+    FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/diskdefs"
+        "${CMAKE_CURRENT_SOURCE_DIR}/ReadMe.md"
+        "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt"
+        "${CMAKE_CURRENT_BINARY_DIR}/pluginst.inf"
+    DESTINATION .
+    COMPONENT cpmimg_runtime
+)
+
+install(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/cpmtools/COPYING"
+    DESTINATION licenses
+    RENAME cpmtools-COPYING.txt
+    COMPONENT cpmimg_runtime
+)
+
+install(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/libdsk_cmake/COPYING"
+    DESTINATION licenses
+    RENAME libdsk-COPYING.txt
+    COMPONENT cpmimg_runtime
+)
+
+if(MSVC)
+    install(
+        FILES "$<TARGET_PDB_FILE:cpmimg_wcx>"
+        DESTINATION "symbols/${CPMIMG_PACKAGE_ARCH}"
+        OPTIONAL
+        COMPONENT cpmimg_symbols
+    )
+endif()
+
+install(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+    DESTINATION .
+    COMPONENT cpmimg_runtime
+)
+
+install(
+    FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/licenses/zlib-LICENSE.txt"
+        "${CMAKE_CURRENT_SOURCE_DIR}/licenses/bzip2-LICENSE.txt"
+    DESTINATION licenses
+    COMPONENT cpmimg_runtime
+)
+# END CPMIMG INSTALL RULES
+
 
 # target_compile_options(cpmimg_wcx PRIVATE "/fsanitize=address") # RTC1 - x86 only?
 

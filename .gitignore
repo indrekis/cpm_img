@@ -384,3 +384,13 @@ FodyWeavers.xsd
 /make_distr.sh
 /fatimg.wcx
 /fatimg.wcx64
+
+# CPMimg release packaging
+/build-release-x86/
+/build-release-x64/
+/dist/
+
+apply*.py
+fix*.py
+*.bak*
+bldlog* 
