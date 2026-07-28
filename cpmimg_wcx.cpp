@@ -427,8 +427,8 @@ extern "C" {
 
 		//! file_ino.size !=0 -- hack for some representations of extents of the empty files
 		if (nres == -1 && file_ino.size !=0 ) { // In fact, already dangerous...
-			// TCmd крашиться тут, якщо повторно, не виходячи з архіва, знову спробувати прочитати файл. 
-			// але достатньо вийти-зайти -- очищати кеш, заходячи в інший архів, не потрібно...
+			// TCmd РєСЂР°С€РёС‚СЊСЃСЏ С‚СѓС‚, СЏРєС‰Рѕ РїРѕРІС‚РѕСЂРЅРѕ, РЅРµ РІРёС…РѕРґСЏС‡Рё Р· Р°СЂС…С–РІР°, Р·РЅРѕРІСѓ СЃРїСЂРѕР±СѓРІР°С‚Рё РїСЂРѕС‡РёС‚Р°С‚Рё С„Р°Р№Р». 
+			// Р°Р»Рµ РґРѕСЃС‚Р°С‚РЅСЊРѕ РІРёР№С‚Рё-Р·Р°Р№С‚Рё -- РѕС‡РёС‰Р°С‚Рё РєРµС€, Р·Р°С…РѕРґСЏС‡Рё РІ С–РЅС€РёР№ Р°СЂС…С–РІ, РЅРµ РїРѕС‚СЂС–Р±РЅРѕ...
 			plugin_config.log_print("\n\nError# Failed opening file %s in archive %s in ProcessFile/cpmNamei",
 				dirent_raw_ptr, hArcData->archname);
 			close_file(hUnpFile);
@@ -563,7 +563,7 @@ extern "C" {
 			if (cpmUnlink(&loc_arch->root, ps.c_str()) == -1)
 			{
 				plugin_config.log_print("\n\nError# Failed deleting file %s in archive %s with error: %s.", 
-					ps.c_str(), PackedFile, boo); // Иииии! Обробка помилок...
+					ps.c_str(), PackedFile, boo); // РРёРёРёРё! РћР±СЂРѕР±РєР° РїРѕРјРёР»РѕРє...
 				return E_NOT_SUPPORTED;
 			}
 			cur_ptr += sl + 1;
@@ -718,7 +718,7 @@ extern "C" {
 			if (false)
 			{
 				plugin_config.log_print("\n\nError# Failed deleting file %s in archive %s with error: %s.",
-					ps.c_str(), PackedFile, boo); // Иииии! Обробка помилок...
+					ps.c_str(), PackedFile, boo); // РРёРёРёРё! РѕР±СЂРѕР±РєР° РїРѕРјРёР»РѕРє...
 				return E_NOT_SUPPORTED;
 			}
 			cur_ptr += sl + 1;
