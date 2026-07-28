@@ -63,7 +63,6 @@ using std::nothrow, std::uint8_t;
 char const cmd[] = "cpmimg_wcx";
 
 plugin_config_t plugin_config;
-minimal_fixed_string_t<33> image_format_loc; // local copy of format to be able to remember it 
 
 // extern HINSTANCE g_GUI_dlg_hInstance;
 
@@ -140,6 +139,7 @@ struct whole_disk_t {
 
 	cpmSuperBlock super;
 	cpmInode root;
+	minimal_fixed_string_t<33> image_format;
 	// std::string format{FORMAT}; //  osb1sssd, osbexec1
 	// struct cpmInode root;
 	std::string driver_name{}; // devopts; example: driver_name=="imd", "tele" etc.
@@ -157,8 +157,7 @@ struct whole_disk_t {
 		openmode_m(openmode), image_file_size(vol_size), read_only{ read_only_in }
 	{
 		archname.push_back(archname_in);
-		if(image_format_loc.is_empty())
-			image_format_loc = plugin_config.image_format; // Add locking! 
+		image_format = plugin_config.image_format;
 		process_image();
 	}
 
@@ -242,7 +241,7 @@ private:
 			throw disk_err_t{ "Error in Device_open.", E_EOPEN };
 		}
 		int erri = cpmReadSuper(&super, &root,
-			image_format_loc.is_empty() ? nullptr : image_format_loc.data(),
+			image_format.is_empty() ? nullptr : image_format.data(),
 			use_uppercase);
 		if (erri == -1)
 		{
@@ -260,16 +259,18 @@ private:
 				if(!img_type_sel_GUI->attempt_new_read())
 					break;
 
-				if ( img_type_sel_GUI->save_disk_type_for_cur() || img_type_sel_GUI->save_disk_type() ) {
-					plugin_config.image_format = img_type_sel_GUI->get_image_type();
-					image_format_loc = plugin_config.image_format;
+				const auto selected_image_format = img_type_sel_GUI->get_image_type();
+				if (img_type_sel_GUI->save_disk_type_for_cur() ||
+					img_type_sel_GUI->save_disk_type()) {
+					image_format = selected_image_format;
 				}
 				if (img_type_sel_GUI->save_disk_type()) {
-					plugin_config.write_conf();					
+					plugin_config.image_format = selected_image_format;
+					plugin_config.write_conf();
 				}
 				
 				erri = cpmReadSuper(&super, &root,
-					img_type_sel_GUI->get_image_type().data(),
+					selected_image_format.data(),
 					use_uppercase);
 				if (erri == -1)
 				{
@@ -572,6 +573,7 @@ extern "C" {
 	}
 
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
+		const auto image_format = plugin_config.image_format;
 		// PK_PACK_MOVE_FILES         1 Delete original after packing
 		// PK_PACK_SAVE_PATHS         2 Save path names of files
 		// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
@@ -593,7 +595,7 @@ extern "C" {
 			// file doesn't exist
 			super.dev.opened = 0;
 			bool use_uppercase = true;
-			cpmReadSuper(&super, &root, image_format_loc.data(),
+			cpmReadSuper(&super, &root, image_format.data(),
 				use_uppercase);
 			size_t bootTrackSize = super.boottrk * super.secLength * super.sectrk;
 			char* bootTracks = new char[bootTrackSize];
@@ -601,7 +603,7 @@ extern "C" {
 			const char* label = "unlabeled";
 			bool use_timeStamps = false;
 			memset(bootTracks, 0xe5, bootTrackSize);
-			if (mkfs(&super, PackedFile, image_format_loc.data(),
+			if (mkfs(&super, PackedFile, image_format.data(),
 				label, bootTracks, use_timeStamps, use_uppercase) == -1)
 			{
 				plugin_config.log_print("\n\nError# Failed creating file: %s in PackFiles with error: %s",
@@ -729,8 +731,10 @@ extern "C" {
 	DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
 		auto disks_set = parse_diskdefs_c(plugin_config.diskdefs_file_path.data());
 		img_type_sel_GUI_t img_type_sel_GUI(disks_set, {}, false);
+		if (!img_type_sel_GUI.attempt_new_read())
+			return;
 		plugin_config.image_format = img_type_sel_GUI.get_image_type();
-		image_format_loc = plugin_config.image_format;
+		plugin_config.write_conf();
 	} //-V773
 
 	DLLEXPORT int STDCALL GetPackerCaps() { // Remove PK_CAPS_BY_CONTENT? 

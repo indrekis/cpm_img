@@ -180,7 +180,7 @@ bool plugin_config_t::write_conf()
 		log_file_path.push_back(config_file_path + "\\cpmimg.log"); // TODO: Fix -- use base path
     fprintf(cf, "log_file_path=%s\n", log_file_path.data());
     fprintf(cf, "debug_level=%x\n\n", debug_level);
-    fprintf(cf, "image_format=%s\n", "osbexec1");
+    fprintf(cf, "image_format=%s\n", image_format.is_empty() ? "osbexec1" : image_format.data());
     if (diskdefs_file_path.is_empty())
         diskdefs_file_path.push_back("diskdefs");
     // fprintf(cf, "diskdefs_file_path=%s\n", (diskdefs_file_path+"\\diskdefs").data());
@@ -233,6 +233,7 @@ std::vector<cpm_disk_descr_t> parse_diskdefs_c(const char* filename) {
         else if (strcmp(key, "skew") == 0)      superblock.skew = atoi(value);
         else if (strcmp(key, "blocksize") == 0) superblock.blksiz = atoi(value);
         else if (strcmp(key, "maxdir") == 0)    superblock.maxdir = atoi(value);
+        else if (strcmp(key, "dirblks") == 0)  superblock.dirblks = atoi(value);
         else if (strcmp(key, "boottrk") == 0)   superblock.boottrk = atoi(value);
         else if (strcmp(key, "bootsec") == 0)   superblock.bootsec = atoi(value);
         else if (strcmp(key, "os") == 0) {
