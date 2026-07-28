@@ -35,11 +35,26 @@
 #include <vector>
 #include <string>
 #include <cstdio>
+#include <cstdint>
 
 #include "cpmimg_plugin_gui_resources.h"
 
 
 extern HINSTANCE g_GUI_dlg_hInstance;
+
+inline std::uint64_t cpm_disk_expected_raw_size(
+    const cpm_disk_descr_t& dsk) noexcept
+{
+    if (dsk.secLength <= 0 || dsk.sectrk <= 0 || dsk.tracks <= 0 ||
+        dsk.offset < 0) {
+        return 0;
+    }
+
+    return static_cast<std::uint64_t>(dsk.offset) +
+        static_cast<std::uint64_t>(dsk.secLength) *
+        static_cast<std::uint64_t>(dsk.sectrk) *
+        static_cast<std::uint64_t>(dsk.tracks);
+}
 
 class img_type_sel_GUI_t {
 private:
@@ -60,6 +75,8 @@ private:
 
     const std::vector<cpm_disk_descr_t>& possible_fmts;
     DSK_GEOMETRY img_geom;
+    bool geometry_reliable = false;
+    size_t image_payload_size = 0;
     bool ui_retry = false;
     minimal_fixed_string_t<33> image_type;
     bool show_probab = false;
@@ -75,31 +92,40 @@ private:
 
         const auto& dsk = possible_fmts[idx];
         int match_score = 0;
+        const auto expected_size = cpm_disk_expected_raw_size(dsk);
+        const bool size_match =
+            image_payload_size != 0 &&
+            expected_size != 0 &&
+            expected_size == static_cast<std::uint64_t>(image_payload_size);
 
         if (show_probab) {
-            if (img_geom.dg_secsize == dsk.secLength) {
-                SendMessage(hEditSecLength, WM_SETFONT, (WPARAM)hBoldFont, TRUE);
-                ++match_score;
-            }
-            else {
-                SendMessage(hEditSecLength, WM_SETFONT, (WPARAM)hNormalFont, TRUE);
-            }
+            SendMessage(hEditSecLength, WM_SETFONT,
+                (WPARAM)hNormalFont, TRUE);
+            SendMessage(hEditTracks, WM_SETFONT,
+                (WPARAM)hNormalFont, TRUE);
+            SendMessage(hEditSectrk, WM_SETFONT,
+                (WPARAM)hNormalFont, TRUE);
 
-            int geom_total_tracks = img_geom.dg_cylinders * img_geom.dg_heads;
-            if (geom_total_tracks == dsk.tracks) {
-                ++match_score;
-                SendMessage(hEditTracks, WM_SETFONT, (WPARAM)hBoldFont, TRUE);
-            }
-            else {
-                SendMessage(hEditTracks, WM_SETFONT, (WPARAM)hNormalFont, TRUE);
-            }
+            if (geometry_reliable) {
+                if (img_geom.dg_secsize == dsk.secLength) {
+                    SendMessage(hEditSecLength, WM_SETFONT,
+                        (WPARAM)hBoldFont, TRUE);
+                    ++match_score;
+                }
 
-            if (img_geom.dg_sectors == dsk.sectrk) {
-                ++match_score;
-                SendMessage(hEditSectrk, WM_SETFONT, (WPARAM)hBoldFont, TRUE);
-            }
-            else {
-                SendMessage(hEditSectrk, WM_SETFONT, (WPARAM)hNormalFont, TRUE);
+                const int geom_total_tracks =
+                    img_geom.dg_cylinders * img_geom.dg_heads;
+                if (geom_total_tracks == dsk.tracks) {
+                    SendMessage(hEditTracks, WM_SETFONT,
+                        (WPARAM)hBoldFont, TRUE);
+                    ++match_score;
+                }
+
+                if (img_geom.dg_sectors == dsk.sectrk) {
+                    SendMessage(hEditSectrk, WM_SETFONT,
+                        (WPARAM)hBoldFont, TRUE);
+                    ++match_score;
+                }
             }
         }
 
@@ -113,7 +139,28 @@ private:
         sprintf(buf, "%d", dsk.boottrk); SetWindowText(hEditBoottrk, buf);
 
         if (show_probab) {
-            SendMessage(hEditProbability, WM_SETFONT, (WPARAM)hBoldFont, TRUE);
+            SendMessage(hEditProbability, WM_SETFONT,
+                (WPARAM)hBoldFont, TRUE);
+
+                        if (!geometry_reliable) {
+                SetWindowText(
+                    GetDlgItem(hDlg, IDC_STATIC_PROBABILITY),
+                    size_match ? "Geometry (size OK):" : "Geometry:"
+                );
+                SetWindowText(hEditProbability, "Unreliable");
+                return;
+            }
+
+            SetWindowText(
+                GetDlgItem(hDlg, IDC_STATIC_PROBABILITY),
+                "Geometry match:"
+            );
+
+            if (match_score == 0 && size_match) {
+                SetWindowText(hEditProbability, "Size match");
+                return;
+            }
+
             switch (match_score) {
             case 0:
                 SetWindowText(hEditProbability, "No");
@@ -319,9 +366,13 @@ public:
 
     img_type_sel_GUI_t(const std::vector<cpm_disk_descr_t>& possible_fmts_in,
         const DSK_GEOMETRY& geom_in,
-        bool show_probab_in) :
+        bool show_probab_in,
+        bool geometry_reliable_in = false,
+        size_t image_payload_size_in = 0) :
         possible_fmts(possible_fmts_in),
         img_geom(geom_in),
+        geometry_reliable(geometry_reliable_in),
+        image_payload_size(image_payload_size_in),
         show_probab(show_probab_in),
         hDlg(nullptr)
     {

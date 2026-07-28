@@ -158,6 +158,7 @@ struct whole_disk_t {
 	}
 
 	size_t image_file_size = 0;	
+	size_t image_payload_size = 0;
 
 	tChangeVolProc   pLocChangeVol = nullptr;
 	tProcessDataProc pLocProcessData = nullptr;
@@ -199,6 +200,8 @@ struct whole_disk_t {
 private: 
 
 	void process_image() {
+		bool geometry_reliable = false;
+		bool raw_size_is_authoritative = false;
 		// td0 is read-only
 		if(get_arch_ext() == "td0"){
 			can_we_write_this_format = false;
@@ -213,6 +216,14 @@ private:
 		{
 			hArchFile = file_handle_t();
 			throw disk_err_t{ "Error opening archive file.", E_EOPEN };
+		}
+		image_file_size = get_file_size(hArchFile);
+		if (image_file_size == static_cast<size_t>(-1))
+			image_file_size = 0;
+		image_payload_size = image_file_size;
+		if (get_arch_ext() == "logdisk" && image_payload_size >= 128) {
+			image_payload_size -= 128;
+			raw_size_is_authoritative = true;
 		}
 		close_file(hArchFile);
 		hArchFile = file_handle_t();
@@ -230,32 +241,69 @@ private:
 
 		err = dsk_getgeom(driver, &geom);
 		dsk_close(&driver);
-		if (err) {
-			plugin_config.log_print("\n\nError# dsk_getgeom failed with: %d", err);
-			
-			// throw disk_err_t{ "Error reading image geometry.", E_EOPEN };
-		}
-		else {
-			const int enough_score = 2;
-			//=================================================================
-			// TODO: Here is some duplication with img_type_sel_GUI_t
-			for (const auto& dsk : disks_set) {
-				int match_score = 0;
-				if (geom.dg_secsize == dsk.secLength)
-					++match_score;
-				int geom_total_tracks = geom.dg_cylinders * geom.dg_heads;
-				if (geom_total_tracks == dsk.tracks)
-					++match_score;
-				if (geom.dg_sectors == dsk.sectrk)
-					++match_score;
 
-				if (match_score >= enough_score) {
-					possible_fmts.push_back(dsk);
-				}
+		const bool geometry_sane =
+			!err &&
+			geom.dg_secsize > 0 &&
+			geom.dg_sectors > 0 &&
+			geom.dg_cylinders > 0 &&
+			geom.dg_heads > 0;
+
+		if (err) {
+			plugin_config.log_print(
+				"\n\nError# dsk_getgeom failed with: %d", err
+			);
+		}
+		else if (geometry_sane) {
+			const auto geometry_size =
+				static_cast<std::uint64_t>(geom.dg_secsize) *
+				static_cast<std::uint64_t>(geom.dg_sectors) *
+				static_cast<std::uint64_t>(geom.dg_cylinders) *
+				static_cast<std::uint64_t>(geom.dg_heads);
+
+			geometry_reliable =
+				!raw_size_is_authoritative ||
+				image_payload_size == 0 ||
+				geometry_size ==
+					static_cast<std::uint64_t>(image_payload_size);
+
+			if (!geometry_reliable) {
+				plugin_config.log_print(
+					"\n\nInfo# Ignoring preliminary LibDsk geometry: "
+					"raw image size mismatch"
+				);
+			}
+		}
+
+		const int enough_score = 2;
+		for (const auto& dsk : disks_set) {
+			int match_score = 0;
+
+			if (geom.dg_secsize == dsk.secLength)
+				++match_score;
+
+			const int geom_total_tracks =
+				geom.dg_cylinders * geom.dg_heads;
+			if (geom_total_tracks == dsk.tracks)
+				++match_score;
+
+			if (geom.dg_sectors == dsk.sectrk)
+				++match_score;
+
+			const auto expected_size =
+				cpm_disk_expected_raw_size(dsk);
+			const bool size_match =
+				image_payload_size != 0 &&
+				expected_size != 0 &&
+				expected_size ==
+					static_cast<std::uint64_t>(image_payload_size);
+
+			if ((geometry_reliable && match_score >= enough_score) ||
+				size_match) {
+				possible_fmts.push_back(dsk);
 			}
 		}
 		//=================================================================
-
 		device_open_guard_t device_guard{super.dev};
 		const char* errs = Device_open(&super.dev, archname.data(), read_only ? O_RDONLY : O_RDWR,
 			driver_name.empty() ? nullptr : driver_name.c_str());
@@ -276,10 +324,10 @@ private:
 			while (true) {
 				std::unique_ptr<img_type_sel_GUI_t> img_type_sel_GUI;
 				if(!possible_fmts.empty()) {
-					img_type_sel_GUI = std::make_unique<img_type_sel_GUI_t>(possible_fmts, geom, true);
+					img_type_sel_GUI = std::make_unique<img_type_sel_GUI_t>(possible_fmts, geom, true, geometry_reliable, image_payload_size);
 				}
 				else {
-					img_type_sel_GUI = std::make_unique<img_type_sel_GUI_t>(disks_set, geom, true); // Add something to GUI to notify user about this
+					img_type_sel_GUI = std::make_unique<img_type_sel_GUI_t>(disks_set, geom, true, geometry_reliable, image_payload_size); // Add something to GUI to notify user about this
 				}
 
 				if(!img_type_sel_GUI->attempt_new_read())
