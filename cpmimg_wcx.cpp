@@ -247,7 +247,7 @@ private:
 		if (erri == -1)
 		{
 			close_file(hArchFile);
-			plugin_config.log_print("\n\nError# Failed reading superblock.");
+			plugin_config.log_print("\n\nError# Failed reading superblock: %s", boo ? boo : "unknown error");
 			while (true) {
 				img_type_sel_GUI_t* img_type_sel_GUI;
 				if(!possible_fmts.empty()) {
@@ -273,7 +273,7 @@ private:
 					use_uppercase);
 				if (erri == -1)
 				{
-					plugin_config.log_print("\n\nError# Failed reading superblock.");
+					plugin_config.log_print("\n\nError# Failed reading superblock: %s", boo ? boo : "unknown error");
 				}
 				else
 					break;

@@ -1084,6 +1084,128 @@ int cpmCheckDs(struct cpmSuperBlock *sb)
   return 0;
 }
 /*}}}*/
+/* directory validation -- reject data misread as a CP/M directory */ /*{{{*/
+static char directoryValidationError[160];
+
+static int directoryValidationFail(int entry, char const *reason)
+{
+  snprintf(directoryValidationError,sizeof(directoryValidationError),
+           "invalid CP/M directory entry %d: %s",entry,reason);
+  boo=directoryValidationError;
+  return -1;
+}
+
+static int validateDirectoryName(struct PhysDirectoryEntry const *entry)
+{
+  int i;
+  unsigned char c;
+
+  for (i=0; i<8; ++i)
+  {
+    c=((unsigned char)entry->name[i])&0x7f;
+    if (!ISFILECHAR(i,c) || c==0x7f || islower(c)) return -1;
+  }
+  for (i=0; i<3; ++i)
+  {
+    c=((unsigned char)entry->ext[i])&0x7f;
+    if (!ISFILECHAR(1,c) || c==0x7f || islower(c)) return -1;
+  }
+  return 0;
+}
+
+static int validateRegularDirectoryEntry(struct cpmSuperBlock const *d,
+                                         int entryIndex)
+{
+  struct PhysDirectoryEntry const *entry=d->dir+entryIndex;
+  int i,min,max,used,recordsInBlocks;
+
+  if (validateDirectoryName(entry)==-1)
+    return directoryValidationFail(entryIndex,"invalid filename");
+
+  if (((unsigned char)entry->extnol)>0x1f)
+    return directoryValidationFail(entryIndex,"invalid lower extent number");
+  if (((unsigned char)entry->extnoh)>0x3f)
+    return directoryValidationFail(entryIndex,"invalid higher extent number");
+  if (((unsigned char)entry->lrc)>128)
+    return directoryValidationFail(entryIndex,"invalid last-record byte count");
+
+  /* Validate allocation block upper bounds.  Do not reject blocks below
+   * dirblks here: some Kaypro system disks deliberately expose RESERVED.SYS
+   * in a block also reserved by the disk definition. */
+  for (i=0; i<16; ++i)
+  {
+    unsigned int block=(unsigned char)entry->pointers[i];
+    if (d->size>256)
+      block|=((unsigned int)(unsigned char)entry->pointers[++i])<<8;
+    if (block && block>=(unsigned int)d->size)
+      return directoryValidationFail(entryIndex,"allocation block outside disk capacity");
+  }
+
+  if (d->extents<=0 || d->extents>16 || (16%d->extents)!=0)
+    return directoryValidationFail(-1,"invalid logical-extents parameter");
+
+  /* Use the same record-count consistency rule as fsck.cpm. */
+  min=(((unsigned char)entry->extnol)%d->extents)*16/d->extents;
+  max=((((unsigned char)entry->extnol)%d->extents)+1)*16/d->extents;
+  if (d->size>256 && ((min&1) || ((max-min)&1)))
+    return directoryValidationFail(-1,"logical extents do not align with 16-bit block pointers");
+
+  used=0;
+  for (i=min; i<max; ++i)
+  {
+    if (entry->pointers[i] ||
+        (d->size>256 && entry->pointers[i+1])) ++used;
+    if (d->size>256) ++i;
+  }
+  recordsInBlocks=(((unsigned char)entry->blkcnt)*128+d->blksiz-1)/d->blksiz;
+  if (recordsInBlocks!=used)
+    return directoryValidationFail(entryIndex,"record count does not match allocated blocks");
+
+  return 0;
+}
+
+static int validateDirectory(struct cpmSuperBlock const *d)
+{
+  int entryIndex;
+  unsigned int regularUserLimit;
+
+  if (!d || !d->dir || d->maxdir<=0 || d->size<=0 || d->blksiz<=0)
+    return directoryValidationFail(-1,"invalid superblock parameters");
+
+  /* Match fsck.cpm semantics: P2DOS permits users 0-31; ordinary CP/M 2.2,
+   * CP/M 3 and the other supported variants use file users 0-15. */
+  regularUserLimit=(d->type==CPMFS_P2DOS) ? 31u : 15u;
+
+  for (entryIndex=0; entryIndex<d->maxdir; ++entryIndex)
+  {
+    struct PhysDirectoryEntry const *entry=d->dir+entryIndex;
+    unsigned int status=(unsigned char)entry->status;
+
+    if (status==0xe5) continue;
+
+    if (status<=regularUserLimit)
+    {
+      if (validateRegularDirectoryEntry(d,entryIndex)==-1) return -1;
+      continue;
+    }
+
+    if (d->type==CPMFS_DR3 && status>=16 && status<=31)
+    {
+      if (validateDirectoryName(entry)==-1)
+        return directoryValidationFail(entryIndex,"invalid password-entry filename");
+      continue;
+    }
+
+    if (d->type==CPMFS_DR3 && status==0x20) continue; /* disk label */
+    if ((d->type==CPMFS_DR3 || d->type==CPMFS_P2DOS) && status==0x21)
+      continue; /* CP/M 3/P2DOS timestamp entry */
+
+    return directoryValidationFail(entryIndex,"invalid user/status byte");
+  }
+
+  return 0;
+}
+/*}}}*/
 /* cpmReadSuper       -- get DPB and init in-core data for drive */ /*{{{*/
 int cpmReadSuper(struct cpmSuperBlock *d, struct cpmInode *root, char const *format, int uppercase)
 {
@@ -1182,6 +1304,19 @@ int cpmReadSuper(struct cpmSuperBlock *d, struct cpmInode *root, char const *for
     }
   }
   /*}}}*/
+  if (validateDirectory(d)==-1)
+  {
+    /* Keep the device open so the existing format-selection retry can reuse
+     * it, but release all allocations made by this failed mount attempt. */
+    free(d->alv);
+    d->alv=(int*)0;
+    d->alvSize=0;
+    free(d->skewtab);
+    d->skewtab=(int*)0;
+    free(d->dir);
+    d->dir=(struct PhysDirectoryEntry*)0;
+    return -1;
+  }
   alvInit(d);
   if (d->type&CPMFS_CPM3_OTHER) /* read additional superblock information */ /*{{{*/
   {
