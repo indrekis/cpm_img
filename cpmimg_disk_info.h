@@ -16,8 +16,6 @@
 inline constexpr const char* CPMIMG_DISK_INFO_FILENAME =
     "__CPM_DISK_INFO__.TXT";
 
-// CPMIMG_DISK_INFO_DETAILS_V2
-
 inline std::string cpmimg_info_basename(const std::string& path)
 {
     const auto pos = path.find_last_of("\\/");

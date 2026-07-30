@@ -252,7 +252,6 @@ struct whole_disk_t {
 	// std::string format{FORMAT}; //  osb1sssd, osbexec1
 	// struct cpmInode root;
 	std::string driver_name{}; // devopts; example: driver_name=="imd", "tele" etc.
-	// CPMIMG_DISK_INFO_DETAILS_V2
 	std::string actual_libdsk_driver_name{"unknown"};
 	std::string actual_libdsk_driver_description{"unknown"};
 	std::string actual_libdsk_compression_name{"none"};
@@ -267,7 +266,6 @@ struct whole_disk_t {
 
 	uint32_t curren_file_counter = 0;
 
-	// CPMIMG_VIRTUAL_DISK_INFO_V1
 	std::string disk_info_text;
 	std::string format_selection_source{"configured-or-cached"};
 	int selected_probe_score = -1;

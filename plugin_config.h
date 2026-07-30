@@ -30,11 +30,10 @@ struct plugin_config_t {
 	minimal_fixed_string_t<MAX_PATH> diskdefs_file_path;
 	uint32_t plugin_interface_version_lo = 0;
 	uint32_t plugin_interface_version_hi = 0;
-#if !defined NDEBUG
 	bool allow_dialogs = true;
+#if !defined NDEBUG
 	bool allow_txt_log = true;
-#else 
-	bool allow_dialogs = false;
+#else
 	bool allow_txt_log = false;
 #endif
 	minimal_fixed_string_t<MAX_PATH> log_file_path;
