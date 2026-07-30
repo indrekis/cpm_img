@@ -1,7 +1,7 @@
 # Configure by:
-# Using MSVC 2019 and create 64-bit plugin:
+# Using MSVC 2022 and create 64-bit plugin:
 #  cmake -A x64   .. -G"Visual Studio 17" -DCMAKE_TOOLCHAIN_FILE="<VCPKG_PATH>/vcpkg/scripts/buildsystems/vcpkg.cmake"	 
-# Using MSVC 2019 and create 32-bit plugin:
+# Using MSVC 2022 and create 32-bit plugin:
 #  cmake -A Win32 .. -G"Visual Studio 17" -DCMAKE_TOOLCHAIN_FILE="<VCPKG_PATH>/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x86-windows-static	
 #
 # Important: the simplest way to support the 32-bit and 64-bit coexistence is to use the static linking of libdsk with zlib and bz2.

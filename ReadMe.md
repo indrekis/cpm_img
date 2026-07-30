@@ -3,10 +3,14 @@
 - [Plugin configuration](#plugin-configuration)
   - [Image format selection dialog](#image-format-selection-dialog)
 - [Compilation](#compilation)
+  - [Packaging note](#packaging-note)
 - [Preparing images for tests](#preparing-images-for-tests)
 - [Problems and limitations](#problems-and-limitations)
-  - [Non-problems but caveats](#non-problems-but-caveats)
-  - [Plans](#plans)
+- [Notes on automatic format probing](#notes-on-automatic-format-probing)
+  - [How probing selects and ranks candidates](#how-probing-selects-and-ranks-candidates)
+  - [Prioritized search batches](#prioritized-search-batches)
+  - [Logging](#logging)
+- [Plans](#plans)
 - [Credits](#credits)
 
 
@@ -24,6 +28,8 @@ Key features:
 - Provides advisory format hints based on preliminary LibDsk geometry and, where useful, the exact image payload size. These hints narrow the candidate list but do not constitute automatic format detection.
 - Allows the selected format to be used only for the current image, retained as the default for later images in the current TCmd session, or saved persistently to `cpmdiskimg.ini`.
 - During the session, keeps the format selection local to each opened archive. Changing the default for later images does not alter an archive that is already open.
+- Autodetection of the image type in the isolated probe -- separate executable. 
+
 
 # Installation
 
@@ -75,6 +81,7 @@ diskdefs_file_path=d:\totalcmd3\plugins32\wcx\cpmimg\diskdefs
 - `debug_level` — currently reserved; values above the supported range make the configuration invalid.
 - `image_format` — the default format name from the selected `diskdefs` file. It is copied into each archive when that archive is opened.
 - `diskdefs_file_path` — path to the `cpmtools`-compatible `diskdefs` file used both for mounting images and for populating the format-selection dialog.
+- `enable_format_probing` -- use `0` to disable automatic probing, `1` to enable. Manual **Probe now** remains available.
 
 ## Image format selection dialog
 
@@ -111,6 +118,14 @@ The dialog checkboxes have the following scope:
 - **Use this disk type for other images in current session** changes the in-memory default for images opened later in the same TCmd session.
 - **Save to config file** also stores the selected format as `image_format` in `cpmdiskimg.ini`.
 
+The format autodetection:
+
+- **Probe now**: probe only the current image.
+- **Automatically probe future unknown images**: change the preference for the current Total Commander session.
+- **Save this probing preference permanently**: also write it to `cpmdiskimg.ini`.
+- **Use this disk type for other images in current session** /
+  **Save selected disk type to config file** -- cache the selected CP/M format, independently from the probing preference.
+
 Pressing **Cancel** or **Escape** aborts the open operation. 
 
 
@@ -118,11 +133,30 @@ Pressing **Cancel** or **Escape** aborts the open operation.
 
 Code can be compiled using the Visual Studio project or CMakeLists.txt (tested using MSVC and MinGW). 
 
-For the coexistence of the 32-bit and 64-bit plugin and to minimize customization of the VCPKG-based build environment, the 32-bit version is currently built using the x86-windows-static triplet. 
+For the coexistence of the 32-bit and 64-bit plugin and to minimize customization of the VCPKG-based build environment, both  32-bit and 64-bit versions are built statically.
 
-Uses C++20, with no obligatory external dependencies. 
+- Uses C++20, with no obligatory external dependencies. 
+- The UI uses raw WinAPI controls to avoid conflicts between multiple GUI runtime copies inside TCmd. 
+  - Tested GUI libraries use too many static and global objects...
 
 Examples of the command lines to compile using CMake are in the CMakeLists.txt.
+
+## Packaging note
+
+The release package must include the probing helper executable that matches the
+plugin bitness:
+
+- `cpmimg_probe32.exe` with `cpmimg.wcx`
+- `cpmimg_probe64.exe` with `cpmimg.wcx64`
+
+Without the helper, the plugin falls back to manual format selection.
+
+To create a distribution package, use:
+
+```bash
+python tools/make_release.py --clean --vcpkg-root <VCPKG_PATH>
+```
+
 
 # Preparing images for tests
 
@@ -138,16 +172,70 @@ The plugin is tested on several hundred floppy images.
 - CP/M format identification remains heuristic. Directory validation rejects many wrong mounts, but an incorrect format can still produce a superficially plausible directory.  Mainly, problems are manifested by an image showing many user "folders". Users are a rarely used feature, anyway.
 - Geometry and exact image size are not unique identifiers. Multiple `diskdefs` entries may describe media with the same physical layout.
 - LibDsk boot-sector probing can produce false-positive geometry. The format dialog treats contradictory geometry as unreliable where an authoritative raw payload size is available.
+- A candidate shown as `Yes` or `Size match` is still only a recommendation; the selected `diskdefs` entry is verified by attempting to mount and validate the CP/M directory.
 - Container formats may include metadata or compression, so their physical file size does not necessarily equal the raw disk payload size.
 - Write support depends on the underlying LibDsk driver. TD0 support is read-only.
 
-## Non-problems but caveats
 
-- The UI uses raw WinAPI controls to avoid conflicts between multiple GUI runtime copies inside TCmd. 
-  - Tested GUI libraries use too many static and global objects...
-- A candidate shown as `Yes` or `Size match` is still only a recommendation; the selected `diskdefs` entry is verified by attempting to mount and validate the CP/M directory.
+# Notes on automatic format probing
 
-## Plans
+Starting with the safe probing implementation, the plugin can test candidate CP/M disk formats in an isolated helper process (`cpmimg_probe32.exe` or `cpmimg_probe64.exe`). If a candidate crashes, hangs, or rejects the image, Total Commander keeps running. When automatic probing is enabled and the initial direct mount fails, the plugin can run isolated probing and then show the format-selection dialog with ranked candidates. 
+
+> Note: probing can incur noticeable delays.
+
+All unique disk definitions are ranked. Candidates are tested in priority batches: exact IMD (or other container) logical-size and layout matches first, then weaker layout or LibDsk geometry matches, and finally unhinted formats. Lower-priority tiers are reached only when no format in a better tier mounts successfully.
+
+## How probing selects and ranks candidates
+
+The probing helper always tests candidates in an isolated process, but the candidate list is prioritized before helpers are started. For raw flat images, the ranking primarily uses:
+
+- exact expected raw size:
+  `offset + secLength * sectrk * tracks`,
+- track count,
+- sector length,
+- sectors per track,
+- LibDsk geometry as an additional hint.
+
+For container formats such as IMD, the plugin no longer uses the container file size directly. Instead it parses the container and computes the **logical raw capacity** from the sector layout stored inside the image. For IMD, this means summing the declared size of every sector described by every track record, including sectors stored in compressed form.
+
+For IMD-like containers, the priority is based on:
+
+- exact logical raw capacity,
+- track-record count,
+- dominant / matching sector size,
+- dominant / matching sectors per track.
+
+All `diskdefs` remain eligible for probing. Narrowing by geometry is used only to improve ranking.
+
+The probing client also removes duplicate format names before helper processes
+are started.
+
+## Prioritized search batches
+
+Candidates are grouped by priority and tested in batches. The current
+implementation uses:
+
+- up to **7** candidates per batch
+- up to **40** total prioritized candidates
+
+If a priority tier produces one or more successful mounts, lower-priority tiers are not probed further. However, all candidates from the successful tier are still checked so that aliases or near-equivalent `diskdef` entries are visible to the user.
+
+## Logging
+
+The text log records the probing outcome, for example:
+
+```text
+Info# IMD logical size 409600 bytes, 80 track records
+Info# Probe kpiv: 100/100; Mount OK; 24 files, 31 extents, 46 blocks
+Info# Probe zen7: 5/100; Mount rejected
+Info# No candidate passed the isolated mount test (42 prioritized formats tested, search limit reached); select the format manually.
+```
+
+If no format passes the isolated test, the dialog still opens and allows manual selection.
+
+
+
+# Plans
 
 - Continue cleaning up the code.
 - Improve image-type detection using additional container metadata and CP/M filesystem consistency checks.
@@ -161,3 +249,4 @@ The plugin is tested on several hundred floppy images.
 # Credits
 
 Many thanks to the libdsk, cpmtools creators, and those who preserve the CP/M software and create corresponding disk images.
+

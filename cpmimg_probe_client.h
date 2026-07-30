@@ -56,8 +56,8 @@ cpm_safe_probe_report cpm_run_safe_format_probes(
     bool geometry_reliable,
     bool uppercase,
     unsigned int batch_timeout_ms = 1500,
-    std::size_t batch_size = 6,
-    std::size_t max_total_candidates = 36);
+    std::size_t batch_size = 7,
+    std::size_t max_total_candidates = 42);
 
 std::vector<cpm_disk_descr_t> cpm_rank_formats_by_probe(
     const std::vector<cpm_disk_descr_t>& formats,
