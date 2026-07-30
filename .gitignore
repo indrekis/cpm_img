@@ -394,3 +394,4 @@ apply*.py
 fix*.py
 *.bak*
 bldlog* 
+stuff/
