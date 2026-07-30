@@ -168,6 +168,17 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         auto tf = get_option_from_map<std::string>("image_format"s);
         image_format.push_back( tf.c_str() );
 
+        // Backward compatible with older INI files.
+        try {
+            enable_format_probing = get_option_from_map<
+                decltype(enable_format_probing)>(
+                    "enable_format_probing"s);
+        }
+        catch (const std::exception&) {
+            // Keep the in-class default (enabled).
+        }
+
+
         if (allow_txt_log && log_file_path.is_empty()) {
             auto tstr = get_option_from_map<std::string>("log_file_path"s);
             log_file_path.clear();
@@ -211,6 +222,7 @@ bool plugin_config_t::write_conf()
 
     fprintf(cf, "allow_dialogs=%x\n", allow_dialogs);
     fprintf(cf, "allow_txt_log=%x\n", allow_txt_log);
+    fprintf(cf, "enable_format_probing=%x\n", enable_format_probing);
     // log_file_path.clear();
     // log_file_path.push_back("D:\\Temp\\cpmimg.txt");
     if(log_file_path.is_empty())

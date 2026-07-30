@@ -67,8 +67,6 @@ char const cmd[] = "cpmimg_wcx";
 plugin_config_t plugin_config;
 
 namespace {
-// CPMIMG_SESSION_FORMAT_CACHE_V2
-//
 // Total Commander may close an archive handle after listing and open
 // the same image again for F3/F5. Therefore the selected format must
 // be cached by image path even when neither persistence checkbox is
@@ -77,6 +75,7 @@ std::mutex session_image_format_mutex;
 std::map<std::string, minimal_fixed_string_t<33>>
     session_image_formats_by_archive;
 minimal_fixed_string_t<33> session_default_image_format;
+std::optional<bool> session_format_probing_override;
 
 std::string normalized_archive_key(const char* archive_name)
 {
@@ -124,6 +123,25 @@ void remember_image_format_for_session(
     std::lock_guard<std::mutex> lock(session_image_format_mutex);
     session_default_image_format = image_format;
 }
+
+
+bool effective_format_probing_enabled()
+{
+    std::lock_guard<std::mutex> lock(
+        session_image_format_mutex);
+    return session_format_probing_override.
+        value_or(
+            plugin_config.enable_format_probing);
+}
+
+void set_format_probing_for_session(
+    bool enabled)
+{
+    std::lock_guard<std::mutex> lock(
+        session_image_format_mutex);
+    session_format_probing_override = enabled;
+}
+
 } // namespace
 
 
@@ -370,7 +388,6 @@ private:
 		//=================================================================
 		device_open_guard_t device_guard{super.dev};
 
-		// CPMIMG_TRANSACTIONAL_FORMAT_RETRY
 		// cpmReadSuper() mutates cpmSuperBlock and Device geometry before it
 		// knows whether the selected format is valid. Therefore every format
 		// attempt must start from a fully discarded superblock and a newly
@@ -411,93 +428,170 @@ private:
                 "\n\nError# Failed reading superblock: %s",
                 boo ? boo : "unknown error");
 
-            // CPMIMG_SAFE_EXTERNAL_AUTODETECT_V1
-            const auto& probe_formats =
-                possible_fmts.empty() ? disks_set : possible_fmts;
+            const auto& probe_formats = disks_set;
+            const auto& initial_dialog_formats =
+                possible_fmts.empty()
+                    ? disks_set
+                    : possible_fmts;
 
-            auto probe_report = cpm_run_safe_format_probes(
-                archname.data(),
-                plugin_config.diskdefs_file_path.data(),
-                driver_name.empty() ? nullptr : driver_name.c_str(),
-                probe_formats,
-                static_cast<std::uint64_t>(image_payload_size),
-                geom,
-                geometry_reliable,
-                use_uppercase);
+            cpm_safe_probe_report probe_report;
+            bool have_probe_report = false;
 
-            plugin_config.log_print(
-                "\nInfo# %s",
-                probe_report.message.c_str());
-
-            for (const auto& candidate : probe_report.candidates) {
+            auto log_probe_report = [&]() {
                 plugin_config.log_print(
-                    "\nInfo# Probe %s: %d/100; %s",
-                    candidate.format_name.c_str(),
-                    candidate.score,
-                    candidate.summary.c_str());
-            }
+                    "\nInfo# %s",
+                    probe_report.message.c_str());
 
-            if (probe_report.unique_match) {
+                for (const auto& candidate :
+                    probe_report.candidates) {
+                    plugin_config.log_print(
+                        "\nInfo# Probe %s: "
+                        "%d/100; %s",
+                        candidate.format_name.c_str(),
+                        candidate.score,
+                        candidate.summary.c_str());
+                }
+            };
+
+            auto run_probe = [&]() -> bool {
+                probe_report =
+                    cpm_run_safe_format_probes(
+                        archname.data(),
+                        plugin_config.
+                            diskdefs_file_path.data(),
+                        driver_name.empty()
+                            ? nullptr
+                            : driver_name.c_str(),
+                        probe_formats,
+                        static_cast<std::uint64_t>(
+                            image_payload_size),
+                        geom,
+                        geometry_reliable,
+                        use_uppercase);
+
+                have_probe_report = true;
+                log_probe_report();
+
+                if (!probe_report.unique_match)
+                    return false;
+
                 erri = mount_with_format(
-                    probe_report.selected_format.c_str());
+                    probe_report.
+                        selected_format.c_str());
+
                 if (erri != -1) {
-                    image_format = probe_report.selected_format.c_str();
+                    image_format =
+                        probe_report.
+                            selected_format.c_str();
                     remember_image_format_for_archive(
-                        archname.data(), image_format);
+                        archname.data(),
+                        image_format);
+                    return true;
                 }
-                else {
-                    probe_report.unique_match = false;
-                    probe_report.message =
-                        "Isolated probe passed, but final mount failed. "
-                        "Select manually.";
-                }
-            }
 
-            if (erri == -1) {
-                const auto dialog_formats = cpm_rank_formats_by_probe(
-                    probe_formats, probe_report);
+                probe_report.unique_match = false;
+                probe_report.message =
+                    "Isolated probe passed, but "
+                    "the final mount failed. "
+                    "Select manually.";
+                return false;
+            };
 
-                while (true) {
-                    auto img_type_sel_GUI =
-                        std::make_unique<img_type_sel_GUI_t>(
+            if (effective_format_probing_enabled())
+                (void)run_probe();
+
+            while (erri == -1) {
+                const auto dialog_formats =
+                    have_probe_report
+                        ? cpm_rank_formats_by_probe(
+                            probe_formats,
+                            probe_report)
+                        : initial_dialog_formats;
+
+                auto img_type_sel_GUI =
+                    std::make_unique<
+                        img_type_sel_GUI_t>(
                             dialog_formats,
                             geom,
                             true,
                             geometry_reliable,
-                            image_payload_size);
+                            image_payload_size,
+                            have_probe_report
+                                ? &probe_report
+                                : nullptr,
+                            effective_format_probing_enabled());
 
-                    if (!img_type_sel_GUI->attempt_new_read())
-                        break;
+                const auto dialog_action =
+                    img_type_sel_GUI->action();
 
-                    const auto selected_image_format =
-                        img_type_sel_GUI->get_image_type();
-                    erri = mount_with_format(selected_image_format.data());
-
-                    if (erri == -1) {
-                        plugin_config.log_print(
-                            "\n\nError# Failed reading superblock "
-                            "with format %s: %s",
-                            selected_image_format.data(),
-                            boo ? boo : "unknown error");
-                        continue;
-                    }
-
-                    image_format = selected_image_format;
-                    remember_image_format_for_archive(
-                        archname.data(), selected_image_format);
-
-                    if (img_type_sel_GUI->save_disk_type_for_cur() ||
-                        img_type_sel_GUI->save_disk_type()) {
-                        remember_image_format_for_session(
-                            selected_image_format);
-                    }
-
-                    if (img_type_sel_GUI->save_disk_type()) {
-                        plugin_config.image_format = selected_image_format;
-                        plugin_config.write_conf();
-                    }
+                if (dialog_action ==
+                    format_dialog_action_t::cancel) {
                     break;
                 }
+
+                const bool enable_future_probing =
+                    img_type_sel_GUI->
+                        automatic_probing_enabled();
+
+                set_format_probing_for_session(
+                    enable_future_probing);
+
+                if (img_type_sel_GUI->
+                    save_probing_preference()) {
+                    plugin_config.
+                        enable_format_probing =
+                            enable_future_probing;
+                    plugin_config.write_conf();
+                }
+
+                if (dialog_action ==
+                    format_dialog_action_t::probe_now) {
+                    (void)run_probe();
+                    continue;
+                }
+
+                const auto selected_image_format =
+                    img_type_sel_GUI->
+                        get_image_type();
+
+                erri = mount_with_format(
+                    selected_image_format.data());
+
+                if (erri == -1) {
+                    plugin_config.log_print(
+                        "\n\nError# Failed reading "
+                        "superblock with format "
+                        "%s: %s",
+                        selected_image_format.data(),
+                        boo
+                            ? boo
+                            : "unknown error");
+                    continue;
+                }
+
+                image_format =
+                    selected_image_format;
+                remember_image_format_for_archive(
+                    archname.data(),
+                    selected_image_format);
+
+                if (
+                    img_type_sel_GUI->
+                        save_disk_type_for_cur() ||
+                    img_type_sel_GUI->
+                        save_disk_type()) {
+                    remember_image_format_for_session(
+                        selected_image_format);
+                }
+
+                if (img_type_sel_GUI->
+                    save_disk_type()) {
+                    plugin_config.image_format =
+                        selected_image_format;
+                    plugin_config.write_conf();
+                }
+
+                break;
             }
 
             if (erri == -1) {
@@ -956,15 +1050,47 @@ extern "C" {
 		return 0;
 	}
 
-	DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
-		auto disks_set = parse_diskdefs_c(plugin_config.diskdefs_file_path.data());
-		img_type_sel_GUI_t img_type_sel_GUI(disks_set, {}, false);
-		if (!img_type_sel_GUI.attempt_new_read())
-			return;
-		const auto selected_image_format = img_type_sel_GUI.get_image_type();
-		remember_image_format_for_session(selected_image_format);
-		plugin_config.image_format = selected_image_format;
-		plugin_config.write_conf();
+	DLLEXPORT void STDCALL ConfigurePacker(
+	    HWND Parent,
+	    HINSTANCE DllInstance)
+	{
+	    (void)Parent;
+	    (void)DllInstance;
+
+	    auto disks_set = parse_diskdefs_c(
+	        plugin_config.diskdefs_file_path.data());
+
+	    img_type_sel_GUI_t img_type_sel_GUI(
+	        disks_set,
+	        {},
+	        false,
+	        false,
+	        0,
+	        nullptr,
+	        effective_format_probing_enabled());
+
+	    if (img_type_sel_GUI.action() !=
+	        format_dialog_action_t::mount_selected) {
+	        return;
+	    }
+
+	    plugin_config.image_format =
+	        img_type_sel_GUI.get_image_type();
+
+	    const bool enable_probing =
+	        img_type_sel_GUI.
+	            automatic_probing_enabled();
+
+	    set_format_probing_for_session(
+	        enable_probing);
+
+	    if (img_type_sel_GUI.
+	        save_probing_preference()) {
+	        plugin_config.enable_format_probing =
+	            enable_probing;
+	    }
+
+	    plugin_config.write_conf();
 	} //-V773
 
 	DLLEXPORT int STDCALL GetPackerCaps() { // Remove PK_CAPS_BY_CONTENT? 

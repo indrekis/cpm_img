@@ -26,6 +26,7 @@
 #include "sysio_winapi.h"
 #include "minimal_fixed_string.h"
 #include "plugin_config.h"
+#include "cpmimg_probe_client.h"
 
 //! TODO: Provision for the Linux GUIs
 
@@ -56,6 +57,12 @@ inline std::uint64_t cpm_disk_expected_raw_size(
         static_cast<std::uint64_t>(dsk.tracks);
 }
 
+enum class format_dialog_action_t {
+    cancel,
+    mount_selected,
+    probe_now
+};
+
 class img_type_sel_GUI_t {
 private:
     HWND hDlg;
@@ -70,6 +77,9 @@ private:
     HWND hEditProbability;
     HWND hCheckSaveType;
     HWND hCheckSaveTypeCur;
+    HWND hButtonProbeNow;
+    HWND hCheckEnableProbing;
+    HWND hCheckSaveProbing;
 
     HBRUSH hDialogBgBrush = nullptr;
 
@@ -82,10 +92,41 @@ private:
     bool show_probab = false;
     bool save_disk_type_res = false; 
     bool save_disk_type_for_cur_res = false;
+    const cpm_safe_probe_report* safe_probe_report = nullptr;
+    bool automatic_probing_initial = true;
+    bool automatic_probing_res = true;
+    bool save_probing_preference_res = false;
+    format_dialog_action_t action_res = format_dialog_action_t::cancel;
 
     static HFONT hBoldFont;
     static HFONT hNormalFont;
     
+    const cpm_safe_probe_candidate* probe_for(
+        const char* format_name) const noexcept
+    {
+        return safe_probe_report
+            ? safe_probe_report->find(format_name)
+            : nullptr;
+    }
+
+    static const char* probe_state_text(
+        cpm_safe_probe_state state) noexcept
+    {
+        switch (state) {
+        case cpm_safe_probe_state::mounted:
+            return "mount OK";
+        case cpm_safe_probe_state::rejected:
+            return "rejected";
+        case cpm_safe_probe_state::timeout:
+            return "timeout";
+        case cpm_safe_probe_state::crashed:
+            return "crashed";
+        case cpm_safe_probe_state::helper_error:
+        default:
+            return "helper error";
+        }
+    }
+
     void update_info_fields(int idx) {
         if (idx < 0 || idx >= static_cast<int>(possible_fmts.size()))
             return;
@@ -139,6 +180,37 @@ private:
         sprintf(buf, "%d", dsk.boottrk); SetWindowText(hEditBoottrk, buf);
 
         if (show_probab) {
+            const auto* probe =
+                probe_for(dsk.fmt_name);
+            if (probe) {
+                SendMessage(
+                    hEditProbability,
+                    WM_SETFONT,
+                    (WPARAM)(
+                        probe->state ==
+                            cpm_safe_probe_state::mounted
+                            ? hBoldFont
+                            : hNormalFont),
+                    TRUE);
+
+                SetWindowText(
+                    GetDlgItem(
+                        hDlg,
+                        IDC_STATIC_PROBABILITY),
+                    "Probe score:");
+
+                char probe_buf[96] = {};
+                sprintf(
+                    probe_buf,
+                    "%d/100 %s",
+                    probe->score,
+                    probe_state_text(probe->state));
+                SetWindowText(
+                    hEditProbability,
+                    probe_buf);
+                return;
+            }
+
             SendMessage(hEditProbability, WM_SETFONT,
                 (WPARAM)hBoldFont, TRUE);
 
@@ -219,6 +291,7 @@ private:
 
         case WM_CLOSE:
             if (pThis) {
+                pThis->action_res = format_dialog_action_t::cancel;
                 pThis->ui_retry = false;
                 if (pThis->hDialogBgBrush) {
                     DeleteObject(pThis->hDialogBgBrush);
@@ -256,7 +329,29 @@ private:
         hEditProbability = GetDlgItem(hDlg, IDC_EDIT_PROBABILITY);
         hCheckSaveType = GetDlgItem(hDlg, IDC_CHECK_SAVE_TYPE);
         hCheckSaveTypeCur = GetDlgItem(hDlg, IDC_CHECK_SAVE_TYPE_CUR);
+        hButtonProbeNow = GetDlgItem(hDlg, IDC_BUTTON_PROBE_NOW);
+        hCheckEnableProbing = GetDlgItem(hDlg, IDC_CHECK_ENABLE_PROBING);
+        hCheckSaveProbing = GetDlgItem(hDlg, IDC_CHECK_SAVE_PROBING);
         auto hStaticText = GetDlgItem(hDlg, IDC_STATIC_TITLE);
+
+        if (safe_probe_report &&
+            !safe_probe_report->message.empty()) {
+            SetWindowText(
+                hStaticText,
+                safe_probe_report->message.c_str());
+        }
+        else if (show_probab) {
+            SetWindowText(
+                hStaticText,
+                automatic_probing_initial
+                    ? "Automatic probing is enabled."
+                    : "Automatic probing is disabled.");
+        }
+        else {
+            SetWindowText(
+                hStaticText,
+                "Configure CP/M image handling");
+        }
 
         // Debug: Check if controls were found
         if (!hComboFormat) {
@@ -282,6 +377,15 @@ private:
         }
         ComboBox_SetCurSel(hComboFormat, 0);
 
+        Button_SetCheck(
+            hCheckEnableProbing,
+            automatic_probing_initial
+                ? BST_CHECKED
+                : BST_UNCHECKED);
+        Button_SetCheck(
+            hCheckSaveProbing,
+            BST_UNCHECKED);
+
         if (!show_probab) {
         // Set checkbox state
             Button_SetCheck(hCheckSaveType, BST_CHECKED);
@@ -290,6 +394,7 @@ private:
         // Hide probability field if not needed
             ShowWindow(hEditProbability, SW_HIDE);
             ShowWindow(GetDlgItem(hDlg, IDC_STATIC_PROBABILITY), SW_HIDE);
+            ShowWindow(hButtonProbeNow, SW_HIDE);
         }
 
         SendMessage(hStaticText, WM_SETFONT, (WPARAM)hBoldFont, TRUE);
@@ -309,6 +414,23 @@ private:
             }
             break;
 
+        case IDC_BUTTON_PROBE_NOW:
+            automatic_probing_res =
+                Button_GetCheck(
+                    hCheckEnableProbing) ==
+                BST_CHECKED;
+            save_probing_preference_res =
+                Button_GetCheck(
+                    hCheckSaveProbing) ==
+                BST_CHECKED;
+            action_res =
+                format_dialog_action_t::probe_now;
+            ui_retry = false;
+            EndDialog(
+                hDlg,
+                IDC_BUTTON_PROBE_NOW);
+            return TRUE;
+
         case IDOK:
         {
             int idx = ComboBox_GetCurSel(hComboFormat);
@@ -317,12 +439,24 @@ private:
                 ui_retry = true;
                 save_disk_type_for_cur_res = (Button_GetCheck(hCheckSaveTypeCur) == BST_CHECKED);
                 save_disk_type_res = (Button_GetCheck(hCheckSaveType) == BST_CHECKED);
+                automatic_probing_res =
+                    Button_GetCheck(
+                        hCheckEnableProbing) ==
+                    BST_CHECKED;
+                save_probing_preference_res =
+                    Button_GetCheck(
+                        hCheckSaveProbing) ==
+                    BST_CHECKED;
+                action_res =
+                    format_dialog_action_t::
+                        mount_selected;
                 EndDialog(hDlg, IDOK);
             }
         }
         break;
 
         case IDCANCEL:
+            action_res = format_dialog_action_t::cancel;
             ui_retry = false;
             EndDialog(hDlg, IDCANCEL);
             break;
@@ -368,12 +502,17 @@ public:
         const DSK_GEOMETRY& geom_in,
         bool show_probab_in,
         bool geometry_reliable_in = false,
-        size_t image_payload_size_in = 0) :
+        size_t image_payload_size_in = 0,
+        const cpm_safe_probe_report* safe_probe_report_in = nullptr,
+        bool automatic_probing_enabled_in = true) :
         possible_fmts(possible_fmts_in),
         img_geom(geom_in),
         geometry_reliable(geometry_reliable_in),
         image_payload_size(image_payload_size_in),
         show_probab(show_probab_in),
+        safe_probe_report(safe_probe_report_in),
+        automatic_probing_initial(automatic_probing_enabled_in),
+        automatic_probing_res(automatic_probing_enabled_in),
         hDlg(nullptr)
     {
         auto can_load_res = TestResourceLoading();
@@ -409,6 +548,18 @@ public:
     bool save_disk_type_for_cur() const {
         return save_disk_type_for_cur_res;
     }
+    format_dialog_action_t action() const noexcept {
+        return action_res;
+    }
+
+    bool automatic_probing_enabled() const noexcept {
+        return automatic_probing_res;
+    }
+
+    bool save_probing_preference() const noexcept {
+        return save_probing_preference_res;
+    }
+
     auto get_image_type() const {
         return image_type;
     }

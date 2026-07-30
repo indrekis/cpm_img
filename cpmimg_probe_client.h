@@ -22,7 +22,8 @@ enum class cpm_safe_probe_state {
 
 struct cpm_safe_probe_candidate {
     std::string format_name;
-    cpm_safe_probe_state state = cpm_safe_probe_state::helper_error;
+    cpm_safe_probe_state state =
+        cpm_safe_probe_state::helper_error;
     int score = 0;
     int physical_score = 0;
     std::size_t files = 0;
@@ -34,6 +35,9 @@ struct cpm_safe_probe_candidate {
 struct cpm_safe_probe_report {
     bool helper_available = false;
     bool unique_match = false;
+    bool container_layout_available = false;
+    std::uint64_t logical_capacity = 0;
+    std::size_t attempted_candidates = 0;
     std::string selected_format;
     std::string message;
     std::vector<cpm_safe_probe_candidate> candidates;
@@ -51,8 +55,9 @@ cpm_safe_probe_report cpm_run_safe_format_probes(
     const DSK_GEOMETRY& geometry,
     bool geometry_reliable,
     bool uppercase,
-    unsigned int total_timeout_ms = 1500,
-    std::size_t max_candidates = 6);
+    unsigned int batch_timeout_ms = 1500,
+    std::size_t batch_size = 6,
+    std::size_t max_total_candidates = 36);
 
 std::vector<cpm_disk_descr_t> cpm_rank_formats_by_probe(
     const std::vector<cpm_disk_descr_t>& formats,
