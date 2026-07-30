@@ -29,6 +29,7 @@
 #include "plugin_config.h"
 #include "cpmimg_plugin_gui.h"
 #include "cpmimg_probe_client.h"
+#include "cpmimg_disk_info.h"
 
 #include "wcxhead.h"
 #include <new>
@@ -251,6 +252,11 @@ struct whole_disk_t {
 	// std::string format{FORMAT}; //  osb1sssd, osbexec1
 	// struct cpmInode root;
 	std::string driver_name{}; // devopts; example: driver_name=="imd", "tele" etc.
+	// CPMIMG_DISK_INFO_DETAILS_V2
+	std::string actual_libdsk_driver_name{"unknown"};
+	std::string actual_libdsk_driver_description{"unknown"};
+	std::string actual_libdsk_compression_name{"none"};
+	std::string actual_libdsk_compression_description{"Not compressed"};
 	bool use_uppercase = true;
 
 	//! TODO: rename 
@@ -260,6 +266,32 @@ struct whole_disk_t {
 	int gargc = 0;
 
 	uint32_t curren_file_counter = 0;
+
+	// CPMIMG_VIRTUAL_DISK_INFO_V1
+	std::string disk_info_text;
+	std::string format_selection_source{"configured-or-cached"};
+	int selected_probe_score = -1;
+	std::size_t probe_candidates_tested = 0;
+	bool last_header_was_disk_info = false;
+
+	bool disk_info_available() const noexcept {
+	    return plugin_config.show_disk_info_file &&
+	        !disk_info_text.empty();
+	}
+
+	void record_probe_selection(
+	    const cpm_safe_probe_report& report) {
+	    format_selection_source = "automatic-probe";
+	    probe_candidates_tested = report.candidates.size();
+	    selected_probe_score = -1;
+	    for (const auto& candidate : report.candidates) {
+	        if (candidate.format_name == report.selected_format) {
+	            selected_probe_score = candidate.score;
+	            break;
+	        }
+	    }
+	}
+
 
 	whole_disk_t(const char* archname_in, size_t vol_size, int openmode, bool read_only_in):
 		openmode_m(openmode), image_file_size(vol_size), read_only{ read_only_in }
@@ -320,6 +352,17 @@ private:
 		if (err) {
 			throw disk_err_t{ "Error opening image archive file.", E_EOPEN };
 		}
+
+		if (const char* value = dsk_drvname(driver))
+		    actual_libdsk_driver_name = value;
+		if (const char* value = dsk_drvdesc(driver))
+		    actual_libdsk_driver_description = value;
+		if (const char* value = dsk_compname(driver))
+		    actual_libdsk_compression_name = value;
+		else
+		    actual_libdsk_compression_name = "none";
+		if (const char* value = dsk_compdesc(driver))
+		    actual_libdsk_compression_description = value;
 
 		err = dsk_getgeom(driver, &geom);
 		dsk_close(&driver);
@@ -483,6 +526,7 @@ private:
                     image_format =
                         probe_report.
                             selected_format.c_str();
+                    record_probe_selection(probe_report);
                     remember_image_format_for_archive(
                         archname.data(),
                         image_format);
@@ -571,6 +615,8 @@ private:
 
                 image_format =
                     selected_image_format;
+                format_selection_source = "manual";
+                selected_probe_score = -1;
                 remember_image_format_for_archive(
                     archname.data(),
                     selected_image_format);
@@ -650,137 +696,219 @@ extern "C" {
 			}
 		}
 
-		return arch.release(); // Returns raw ptr and releases ownership 
+		if (plugin_config.show_disk_info_file) {
+            arch->disk_info_text = cpmimg_build_disk_info(
+                arch->archname.data(),
+                static_cast<std::uint64_t>(arch->image_file_size),
+                arch->driver_name.c_str(),
+                arch->actual_libdsk_driver_name.c_str(),
+                arch->actual_libdsk_driver_description.c_str(),
+                arch->actual_libdsk_compression_name.c_str(),
+                arch->actual_libdsk_compression_description.c_str(),
+                arch->image_format.data(),
+                plugin_config.diskdefs_file_path.data(),
+                arch->format_selection_source.c_str(),
+                arch->selected_probe_score,
+                arch->probe_candidates_tested,
+                arch->can_we_write_this_format,
+                arch->super,
+                arch->root);
+        }
+
+        return arch.release(); // Returns raw ptr and releases ownership 
 	}
 
 	// TCmd calls ReadHeader to find out what files are in the archive
-	DLLEXPORT int STDCALL ReadHeader(archive_HANDLE hArcData, tHeaderData* HeaderData)
-	{
-		if (hArcData->curren_file_counter < hArcData->gargc)
-		{
-			auto root_ino = &hArcData->root;
-			cpmInode file_ino;
-			auto dirent_raw_ptr = hArcData->gargv[hArcData->curren_file_counter];
+	DLLEXPORT int STDCALL ReadHeader(
+        archive_HANDLE hArcData,
+        tHeaderData* HeaderData)
+    {
+        hArcData->last_header_was_disk_info = false;
 
-			if (strcmp(dirent_raw_ptr, "..") == 0) { // Skip
-				++hArcData->curren_file_counter;
-				if( hArcData->curren_file_counter < hArcData->gargc )
-					dirent_raw_ptr = hArcData->gargv[hArcData->curren_file_counter];
-				else 
-					return E_END_ARCHIVE;
-			}
+        while (hArcData->curren_file_counter <
+               static_cast<uint32_t>(hArcData->gargc)) {
+            auto root_ino = &hArcData->root;
+            cpmInode file_ino{};
+            auto dirent_raw_ptr =
+                hArcData->gargv[hArcData->curren_file_counter];
 
-			// TODO: support for the [passwd] [label] names 
-			// TODO: cpmNamei sometimes returns error code. Example: COB1A.IMD/SQUARO -- some extents error.
-			//       then the struct is filled with void values.
-			cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
+            if (strcmp(dirent_raw_ptr, "..") == 0) {
+                ++hArcData->curren_file_counter;
+                continue;
+            }
 
-			strcpy(HeaderData->ArcName, hArcData->archname.data());
+            cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
+            strcpy(HeaderData->ArcName, hArcData->archname.data());
 
-			if (hArcData->users_counter == 0)
-			{
-				strcpy(HeaderData->FileName, dirent_raw_ptr + 2);
-			}
-			else {
-				minimal_fixed_string_t<MAX_PATH> ts{dirent_raw_ptr, 2};
-				ts.push_back("\\");
-				ts.push_back(dirent_raw_ptr + 2);
-				strcpy(HeaderData->FileName, ts.data());
-			}
-			HeaderData->FileAttr = cpm_attr_to_tcmd_attr(file_ino.attr);
-			// TODO: check and fix time
-			HeaderData->FileTime = file_ino.mtime;
-			HeaderData->PackSize = file_ino.size; // (statbuf.size+127)/128
-			HeaderData->UnpSize = HeaderData->PackSize;
-			HeaderData->CmtBuf = 0;
-			HeaderData->CmtBufSize = 0; 
-			HeaderData->CmtSize = 0;
-			HeaderData->CmtState = 0;
-			HeaderData->UnpVer = 0;
-			HeaderData->Method = 0;
-			HeaderData->FileCRC = 0;
-			++hArcData->curren_file_counter;
-			return 0;
-		}
-		
-		hArcData->curren_file_counter = 0;
-		return E_END_ARCHIVE;
-	}
+            if (hArcData->users_counter == 0) {
+                strcpy(HeaderData->FileName, dirent_raw_ptr + 2);
+            }
+            else {
+                minimal_fixed_string_t<MAX_PATH> path{
+                    dirent_raw_ptr, 2
+                };
+                path.push_back("\\");
+                path.push_back(dirent_raw_ptr + 2);
+                strcpy(HeaderData->FileName, path.data());
+            }
+
+            HeaderData->FileAttr =
+                cpm_attr_to_tcmd_attr(file_ino.attr);
+            HeaderData->FileTime = file_ino.mtime;
+            HeaderData->PackSize = file_ino.size;
+            HeaderData->UnpSize = file_ino.size;
+            HeaderData->CmtBuf = nullptr;
+            HeaderData->CmtBufSize = 0;
+            HeaderData->CmtSize = 0;
+            HeaderData->CmtState = 0;
+            HeaderData->UnpVer = 0;
+            HeaderData->Method = 0;
+            HeaderData->FileCRC = 0;
+
+            ++hArcData->curren_file_counter;
+            return 0;
+        }
+
+        if (hArcData->disk_info_available() &&
+            hArcData->curren_file_counter ==
+                static_cast<uint32_t>(hArcData->gargc)) {
+            strcpy(HeaderData->ArcName, hArcData->archname.data());
+            strcpy(HeaderData->FileName, CPMIMG_DISK_INFO_FILENAME);
+            HeaderData->FileAttr = 0x01;
+            HeaderData->FileTime = 0;
+            HeaderData->PackSize =
+                static_cast<int>(hArcData->disk_info_text.size());
+            HeaderData->UnpSize = HeaderData->PackSize;
+            HeaderData->CmtBuf = nullptr;
+            HeaderData->CmtBufSize = 0;
+            HeaderData->CmtSize = 0;
+            HeaderData->CmtState = 0;
+            HeaderData->UnpVer = 0;
+            HeaderData->Method = 0;
+            HeaderData->FileCRC = 0;
+
+            hArcData->last_header_was_disk_info = true;
+            ++hArcData->curren_file_counter;
+            return 0;
+        }
+
+        hArcData->curren_file_counter = 0;
+        hArcData->last_header_was_disk_info = false;
+        return E_END_ARCHIVE;
+    }
 
 	// ProcessFile should unpack the specified file or test the integrity of the archive
-	DLLEXPORT int STDCALL ProcessFile(archive_HANDLE hArcData, int Operation, char* DestPath, char* DestName) //-V2009
-	{
-		char dest[MAX_PATH] = "";
-		file_handle_t hUnpFile;
+	DLLEXPORT int STDCALL ProcessFile(
+        archive_HANDLE hArcData,
+        int Operation,
+        char* DestPath,
+        char* DestName)
+    {
+        char dest[MAX_PATH] = "";
+        file_handle_t hUnpFile;
 
-		if (Operation == PK_SKIP) return 0;
+        if (Operation == PK_SKIP)
+            return 0;
+        if (hArcData->curren_file_counter == 0)
+            return E_END_ARCHIVE;
 
-		if (hArcData->curren_file_counter > hArcData->gargc)
-			return E_NO_MEMORY; // Logic error
+        if (Operation == PK_TEST) {
+            if (!get_temp_filename(dest, "FIM"))
+                return E_ECREATE;
+        }
+        else {
+            if (DestPath)
+                strcpy(dest, DestPath);
+            if (DestName)
+                strcat(dest, DestName);
+        }
 
-		if ( hArcData->curren_file_counter == 0 )
-			return E_END_ARCHIVE;
-		// if (newentry->FileAttr & ATTR_DIRECTORY) return 0;
+        if (hArcData->last_header_was_disk_info) {
+            hUnpFile = Operation == PK_TEST
+                ? open_file_overwrite(dest)
+                : open_file_write(dest);
 
-		if (Operation == PK_TEST) {
-			auto res = get_temp_filename(dest, "FIM");
-			if (!res) {
-				return E_ECREATE;
-			}
-		}
-		else {
-			if (DestPath) strcpy(dest, DestPath);
-			if (DestName) strcat(dest, DestName);
-		}
+            if (hUnpFile == file_open_error_v)
+                return E_ECREATE;
 
-		struct cpmFile file;
-		auto root_ino = &hArcData->root;
-		cpmInode file_ino;
-		auto dirent_raw_ptr = hArcData->gargv[hArcData->curren_file_counter - 1];
-		auto nres = cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
-		// If we got this far, for errors different than E_ECREATE, TCmd expects file should exist
-		if (Operation == PK_TEST) {
-			hUnpFile = open_file_overwrite(dest);
-		}
-		else {
-			hUnpFile = open_file_write(dest);
-		}
-		if (hUnpFile == file_open_error_v)
-			return E_ECREATE;
+            write_file(
+                hUnpFile,
+                hArcData->disk_info_text.data(),
+                hArcData->disk_info_text.size());
+            close_file(hUnpFile);
 
-		//! file_ino.size !=0 -- hack for some representations of extents of the empty files
-		if (nres == -1 && file_ino.size !=0 ) { // In fact, already dangerous...
-			// TCmd крашиться тут, якщо повторно, не виходячи з архіва, знову спробувати прочитати файл. 
-			// але достатньо вийти-зайти -- очищати кеш, заходячи в інший архів, не потрібно...
-			plugin_config.log_print("\n\nError# Failed opening file %s in archive %s in ProcessFile/cpmNamei",
-				dirent_raw_ptr, hArcData->archname);
-			close_file(hUnpFile);
-			return E_BAD_DATA;
-		}
-		if (file_ino.size != 0) {
-			auto buf = std::make_unique<char[]>(file_ino.size);
-			// std::unique_ptr<char[]> buf{ new char[file_ino.size] };
-			auto ores = cpmOpen(&file_ino, &file, O_RDONLY);
-			if (ores == -1) {
-				plugin_config.log_print("\n\nError# Failed opening file %s in archive %s in ProcessFile/cpmOpen",
-					dirent_raw_ptr, hArcData->archname);
-				close_file(hUnpFile);
-				return E_BAD_DATA;
-			}
-			auto rres = cpmRead(&file, buf.get(), file_ino.size);
+            if (Operation == PK_TEST)
+                delete_file(dest);
+            else
+                (void)set_file_attributes(dest, 0x01);
 
-			write_file(hUnpFile, buf.get(), file_ino.size);
-		}
+            return 0;
+        }
 
-		if (file_ino.mtime != 0)
-			set_file_datetime(hUnpFile, file_ino.mtime); // TODO: Check and fix
-		close_file(hUnpFile);
-		set_file_attributes_cpm(dest, file_ino.attr);		
-		if (Operation == PK_TEST) {
-			delete_file(dest);
-		}
-		return 0;
-	}
+        if (hArcData->curren_file_counter >
+            static_cast<uint32_t>(hArcData->gargc)) {
+            return E_NO_MEMORY;
+        }
+
+        struct cpmFile file{};
+        auto root_ino = &hArcData->root;
+        cpmInode file_ino{};
+        auto dirent_raw_ptr =
+            hArcData->gargv[hArcData->curren_file_counter - 1];
+        const auto nres =
+            cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
+
+        hUnpFile = Operation == PK_TEST
+            ? open_file_overwrite(dest)
+            : open_file_write(dest);
+
+        if (hUnpFile == file_open_error_v)
+            return E_ECREATE;
+
+        if (nres == -1 && file_ino.size != 0) {
+            plugin_config.log_print(
+                "\n\nError# Failed opening file %s in archive %s "
+                "in ProcessFile/cpmNamei",
+                dirent_raw_ptr,
+                hArcData->archname.data());
+            close_file(hUnpFile);
+            return E_BAD_DATA;
+        }
+
+        if (file_ino.size != 0) {
+            auto buf = std::make_unique<char[]>(file_ino.size);
+
+            if (cpmOpen(&file_ino, &file, O_RDONLY) == -1) {
+                plugin_config.log_print(
+                    "\n\nError# Failed opening file %s in archive %s "
+                    "in ProcessFile/cpmOpen",
+                    dirent_raw_ptr,
+                    hArcData->archname.data());
+                close_file(hUnpFile);
+                return E_BAD_DATA;
+            }
+
+            const auto rres =
+                cpmRead(&file, buf.get(), file_ino.size);
+            if (rres != file_ino.size) {
+                close_file(hUnpFile);
+                return E_BAD_DATA;
+            }
+
+            write_file(hUnpFile, buf.get(), file_ino.size);
+        }
+
+        if (file_ino.mtime != 0)
+            set_file_datetime(hUnpFile, file_ino.mtime);
+
+        close_file(hUnpFile);
+        set_file_attributes_cpm(dest, file_ino.attr);
+
+        if (Operation == PK_TEST)
+            delete_file(dest);
+
+        return 0;
+    }
 
 	// CloseArchive should perform all necessary operations when an archive is about to be closed
 	DLLEXPORT int STDCALL CloseArchive(archive_HANDLE hArcData)
@@ -872,6 +1000,11 @@ extern "C" {
 			if (sl == 0)
 				break;
 			std::string ps{cur_ptr};
+			if (cpmimg_is_disk_info_name(ps.c_str())) {
+				plugin_config.log_print("\nInfo# Ignoring virtual file %s", cur_ptr);
+				cur_ptr += sl + 1;
+				continue;
+			}
 			auto user_pos = ps.find('\\');
 			if (user_pos == 2) {
 				ps.erase(2, 1);
@@ -965,6 +1098,11 @@ extern "C" {
 			if (sl == 0)
 				break;
 			std::string ps{cur_ptr};
+			if (cpmimg_is_disk_info_name(ps.c_str())) {
+				plugin_config.log_print("\nInfo# Ignoring virtual file %s", cur_ptr);
+				cur_ptr += sl + 1;
+				continue;
+			}
 			auto user_pos = ps.find('\\');
 			if ( user_pos == ps.size() - 1 ) {
 				cur_ptr += sl + 1;

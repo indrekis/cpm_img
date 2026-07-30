@@ -53,6 +53,7 @@ struct plugin_config_t {
 	minimal_fixed_string_t<33> image_format{"osbexec1"};
 	// Missing option in an older INI preserves the existing enabled behaviour.
 	bool enable_format_probing = true;
+	bool show_disk_info_file = true;
 private:
 	using options_map_t = std::map<std::string, std::string>;
 
