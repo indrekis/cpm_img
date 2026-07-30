@@ -70,7 +70,7 @@ target_compile_definitions(cpmfs PUBLIC NOTWINDLL)
 
 set(SOURCE_FILES cpmimg_wcx.cpp  minimal_fixed_string.h  resource.h  sysio_winapi.cpp  sysio_winapi.h wcxhead.h main_resources.rc
 string_tools.cpp string_tools.h plugin_config.cpp plugin_config.h 
-cpmimg_plugin_gui.cpp cpmimg_plugin_gui.h cpmimg_plugin_gui.rc cpmimg_plugin_gui_resources.h 
+cpmimg_plugin_gui.cpp cpmimg_plugin_gui.h cpmimg_plugin_gui.rc cpmimg_plugin_gui_resources.h cpmimg_probe_client.cpp cpmimg_probe_client.h 
 	)
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)	
@@ -81,7 +81,20 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 	set(BITTNES_SUFIX "_32")
 endif()
 
+
+# Isolated format probe. Each candidate runs in its own process so faults in
+# legacy cpmfs/libdsk code cannot terminate Total Commander.
+add_executable(cpmimg_probe cpmimg_probe_main.cpp)
+target_link_libraries(cpmimg_probe PRIVATE cpmfs libdsk${BITTNES_SUFIX})
+
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set_target_properties(cpmimg_probe PROPERTIES OUTPUT_NAME cpmimg_probe64)
+else()
+    set_target_properties(cpmimg_probe PROPERTIES OUTPUT_NAME cpmimg_probe32)
+endif()
+
 add_library(cpmimg_wcx SHARED ${SOURCE_FILES} )
+add_dependencies(cpmimg_wcx cpmimg_probe) # Build the isolated probe before packaging the WCX plugin
 set_target_properties(cpmimg_wcx PROPERTIES OUTPUT_NAME cpmimg)
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)	
 	set_target_properties(cpmimg_wcx PROPERTIES SUFFIX .wcx64 PREFIX "") 
@@ -160,6 +173,8 @@ install(
     DESTINATION licenses
     COMPONENT cpmimg_runtime
 )
+install(TARGETS cpmimg_probe RUNTIME DESTINATION . COMPONENT cpmimg_runtime)
+
 # END CPMIMG INSTALL RULES
 
 

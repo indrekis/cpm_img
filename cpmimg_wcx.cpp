@@ -28,6 +28,7 @@
 #include "minimal_fixed_string.h"
 #include "plugin_config.h"
 #include "cpmimg_plugin_gui.h"
+#include "cpmimg_probe_client.h"
 
 #include "wcxhead.h"
 #include <new>
@@ -404,79 +405,110 @@ private:
 		int erri = mount_with_format(
 			image_format.is_empty() ? nullptr : image_format.data());
 
-		if (erri == -1)
-		{
-			plugin_config.log_print(
-				"\n\nError# Failed reading superblock: %s",
-				boo ? boo : "unknown error");
+        if (erri == -1)
+        {
+            plugin_config.log_print(
+                "\n\nError# Failed reading superblock: %s",
+                boo ? boo : "unknown error");
 
-			while (true) {
-				std::unique_ptr<img_type_sel_GUI_t> img_type_sel_GUI;
-				if (!possible_fmts.empty()) {
-					img_type_sel_GUI =
-						std::make_unique<img_type_sel_GUI_t>(
-							possible_fmts,
-							geom,
-							true,
-							geometry_reliable,
-							image_payload_size);
-				}
-				else {
-					img_type_sel_GUI =
-						std::make_unique<img_type_sel_GUI_t>(
-							disks_set,
-							geom,
-							true,
-							geometry_reliable,
-							image_payload_size);
-				}
+            // CPMIMG_SAFE_EXTERNAL_AUTODETECT_V1
+            const auto& probe_formats =
+                possible_fmts.empty() ? disks_set : possible_fmts;
 
-				if (!img_type_sel_GUI->attempt_new_read())
-					break;
+            auto probe_report = cpm_run_safe_format_probes(
+                archname.data(),
+                plugin_config.diskdefs_file_path.data(),
+                driver_name.empty() ? nullptr : driver_name.c_str(),
+                probe_formats,
+                static_cast<std::uint64_t>(image_payload_size),
+                geom,
+                geometry_reliable,
+                use_uppercase);
 
-				const auto selected_image_format =
-					img_type_sel_GUI->get_image_type();
+            plugin_config.log_print(
+                "\nInfo# %s",
+                probe_report.message.c_str());
 
-				erri = mount_with_format(selected_image_format.data());
-				if (erri == -1)
-				{
-					plugin_config.log_print(
-						"\n\nError# Failed reading superblock "
-						"with format %s: %s",
-						selected_image_format.data(),
-						boo ? boo : "unknown error");
-					continue;
-				}
+            for (const auto& candidate : probe_report.candidates) {
+                plugin_config.log_print(
+                    "\nInfo# Probe %s: %d/100; %s",
+                    candidate.format_name.c_str(),
+                    candidate.score,
+                    candidate.summary.c_str());
+            }
 
-				// Commit format state only after a successful fresh mount.
-				image_format = selected_image_format;
-				remember_image_format_for_archive(
-					archname.data(),
-					selected_image_format);
+            if (probe_report.unique_match) {
+                erri = mount_with_format(
+                    probe_report.selected_format.c_str());
+                if (erri != -1) {
+                    image_format = probe_report.selected_format.c_str();
+                    remember_image_format_for_archive(
+                        archname.data(), image_format);
+                }
+                else {
+                    probe_report.unique_match = false;
+                    probe_report.message =
+                        "Isolated probe passed, but final mount failed. "
+                        "Select manually.";
+                }
+            }
 
-				if (img_type_sel_GUI->save_disk_type_for_cur() ||
-					img_type_sel_GUI->save_disk_type()) {
-					remember_image_format_for_session(
-						selected_image_format);
-				}
+            if (erri == -1) {
+                const auto dialog_formats = cpm_rank_formats_by_probe(
+                    probe_formats, probe_report);
 
-				if (img_type_sel_GUI->save_disk_type()) {
-					plugin_config.image_format = selected_image_format;
-					plugin_config.write_conf();
-				}
+                while (true) {
+                    auto img_type_sel_GUI =
+                        std::make_unique<img_type_sel_GUI_t>(
+                            dialog_formats,
+                            geom,
+                            true,
+                            geometry_reliable,
+                            image_payload_size);
 
-				break;
-			}
+                    if (!img_type_sel_GUI->attempt_new_read())
+                        break;
 
-			if (erri == -1) {
-				cpmDiscardSuper(&super);
-				root = {};
-				throw disk_err_t{
-					"Error in cpmReadSuper.",
-					E_EOPEN
-				};
-			}
-		}
+                    const auto selected_image_format =
+                        img_type_sel_GUI->get_image_type();
+                    erri = mount_with_format(selected_image_format.data());
+
+                    if (erri == -1) {
+                        plugin_config.log_print(
+                            "\n\nError# Failed reading superblock "
+                            "with format %s: %s",
+                            selected_image_format.data(),
+                            boo ? boo : "unknown error");
+                        continue;
+                    }
+
+                    image_format = selected_image_format;
+                    remember_image_format_for_archive(
+                        archname.data(), selected_image_format);
+
+                    if (img_type_sel_GUI->save_disk_type_for_cur() ||
+                        img_type_sel_GUI->save_disk_type()) {
+                        remember_image_format_for_session(
+                            selected_image_format);
+                    }
+
+                    if (img_type_sel_GUI->save_disk_type()) {
+                        plugin_config.image_format = selected_image_format;
+                        plugin_config.write_conf();
+                    }
+                    break;
+                }
+            }
+
+            if (erri == -1) {
+                cpmDiscardSuper(&super);
+                root = {};
+                throw disk_err_t{
+                    "Error in cpmReadSuper.",
+                    E_EOPEN
+                };
+            }
+        }
 
 		device_guard.release();
 	}

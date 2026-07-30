@@ -1,0 +1,8 @@
+[plugininstall]
+description=CP/M image R/W plugin for Total Commander
+descriptionukr=Плагін для роботи із образами CP/M для Total Commander
+version=@PROJECT_VERSION@
+type=wcx
+file=cpmimg.wcx
+defaultdir=plugin\wcx\cpmimg
+defaultextension=IMD,TD0
