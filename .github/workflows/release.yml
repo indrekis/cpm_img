@@ -1,0 +1,107 @@
+name: Build CPMimg release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Expected version; leave empty to use CMakeLists.txt"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-package:
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: C:\vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-binary-cache
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Prepare vcpkg binary cache
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'libdsk_cmake/CMakeLists.txt') }}
+
+
+
+      - name: Install x86 and x64 dependencies
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" install `
+            zlib:x86-windows-static bzip2:x86-windows-static `
+            zlib:x64-windows-static bzip2:x64-windows-static
+
+      - name: Build and package both architectures
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.version }}"
+          if ("${{ github.event_name }}" -eq "push") {
+            $version = "${{ github.ref_name }}".TrimStart("v")
+          }
+
+          $arguments = @(
+            "tools/make_release.py",
+            "--clean",
+            "--vcpkg-root", $env:VCPKG_ROOT
+          )
+          if ($version) {
+            $arguments += @("--version", $version)
+          }
+
+          python @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "release packaging failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Upload release package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: cpmimg-release-${{ github.run_number }}
+          path: |
+            dist/cpmimg-wcx-*.zip
+            dist/cpmimg-wcx-*.zip.sha256
+          if-no-files-found: error
+
+      - name: Create or update GitHub Release
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $assets = Get-ChildItem dist -File |
+            Where-Object {
+              $_.Name -like "cpmimg-wcx-*.zip" -or
+              $_.Name -like "cpmimg-wcx-*.zip.sha256"
+            } |
+            Sort-Object Name |
+            ForEach-Object { $_.FullName }
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            & gh release upload $tag @assets --clobber
+          }
+          else {
+            & gh release create $tag @assets --verify-tag --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release update failed with exit code $LASTEXITCODE"
+          }
