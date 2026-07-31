@@ -239,7 +239,16 @@ struct whole_disk_t {
 		if (ext_pos == std::string::npos) {
 			return minimal_fixed_string_t<MAX_PATH>{};
 		}
-		return minimal_fixed_string_t<MAX_PATH>{archname.data() + ext_pos + 1};
+
+		auto extension =
+			minimal_fixed_string_t<MAX_PATH>{
+				archname.data() + ext_pos + 1};
+		for (size_t i = 0; i < extension.size(); ++i) {
+			extension[i] = static_cast<char>(
+				std::tolower(
+					static_cast<unsigned char>(extension[i])));
+		}
+		return extension;
 	}
 
 	size_t image_file_size = 0;	
