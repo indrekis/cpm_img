@@ -1571,7 +1571,7 @@ extern "C" {
 	// BACKGROUND_UNPACK == 1 Calls to OpenArchive, ReadHeader(Ex), ProcessFile and CloseArchive are thread-safe 
 #ifdef _WIN64
 	DLLEXPORT int STDCALL GetBackgroundFlags(PackDefaultParamStruct* dps) {
-		return BACKGROUND_UNPACK;
+		return 0; //  BACKGROUND_UNPACK; // TODO: Currently code is deeply not thread-safe, including boo global variable of the libdsk library. 
 	}
 #endif 
 	DLLEXPORT int STDCALL CanYouHandleThisFile(char* FileName) { // BOOL == int 
