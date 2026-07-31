@@ -4,11 +4,13 @@
   - [Image format selection dialog](#image-format-selection-dialog)
 - [Compilation](#compilation)
   - [Packaging note](#packaging-note)
-- [Preparing images for tests](#preparing-images-for-tests)
+- [Images for tests](#images-for-tests)
 - [Problems and limitations](#problems-and-limitations)
-- [Notes on automatic format probing](#notes-on-automatic-format-probing)
-  - [How probing selects and ranks candidates](#how-probing-selects-and-ranks-candidates)
-  - [Prioritized search batches](#prioritized-search-batches)
+- [Plugin behavior details](#plugin-behavior-details)
+  - [Notes on automatic format probing](#notes-on-automatic-format-probing)
+    - [How probing selects and ranks candidates](#how-probing-selects-and-ranks-candidates)
+    - [Prioritized search batches](#prioritized-search-batches)
+  - [Image metainformation details](#image-metainformation-details)
   - [Logging](#logging)
 - [Plans](#plans)
 - [Credits](#credits)
@@ -29,7 +31,8 @@ Key features:
 - Allows the selected format to be used only for the current image, retained as the default for later images in the current TCmd session, or saved persistently to `cpmdiskimg.ini`.
 - During the session, keeps the format selection local to each opened archive. Changing the default for later images does not alter an archive that is already open.
 - Autodetection of the image type in the isolated probe -- separate executable. 
-
+- Details about the image can be shown by an additional virtual,
+read-only file in the archive root, `__CPM_DISK_INFO__.TXT`.
 
 # Installation
 
@@ -82,6 +85,7 @@ diskdefs_file_path=d:\totalcmd3\plugins32\wcx\cpmimg\diskdefs
 - `image_format` — the default format name from the selected `diskdefs` file. It is copied into each archive when that archive is opened.
 - `diskdefs_file_path` — path to the `cpmtools`-compatible `diskdefs` file used both for mounting images and for populating the format-selection dialog.
 - `enable_format_probing` -- use `0` to disable automatic probing, `1` to enable. Manual **Probe now** remains available.
+- `show_disk_info_file` -- 0 to disable creation of the `__CPM_DISK_INFO__.TXT` virtual file with metainformation, 1 -- enable it.
 
 ## Image format selection dialog
 
@@ -158,7 +162,7 @@ python tools/make_release.py --clean --vcpkg-root <VCPKG_PATH>
 ```
 
 
-# Preparing images for tests
+# Images for tests
 
 The plugin was tested using two kinds of images:
 
@@ -177,7 +181,9 @@ The plugin is tested on several hundred floppy images.
 - Write support depends on the underlying LibDsk driver. TD0 support is read-only.
 
 
-# Notes on automatic format probing
+# Plugin behavior details 
+
+## Notes on automatic format probing
 
 Starting with the safe probing implementation, the plugin can test candidate CP/M disk formats in an isolated helper process (`cpmimg_probe32.exe` or `cpmimg_probe64.exe`). If a candidate crashes, hangs, or rejects the image, Total Commander keeps running. When automatic probing is enabled and the initial direct mount fails, the plugin can run isolated probing and then show the format-selection dialog with ranked candidates. 
 
@@ -185,7 +191,7 @@ Starting with the safe probing implementation, the plugin can test candidate CP/
 
 All unique disk definitions are ranked. Candidates are tested in priority batches: exact IMD (or other container) logical-size and layout matches first, then weaker layout or LibDsk geometry matches, and finally unhinted formats. Lower-priority tiers are reached only when no format in a better tier mounts successfully.
 
-## How probing selects and ranks candidates
+### How probing selects and ranks candidates
 
 The probing helper always tests candidates in an isolated process, but the candidate list is prioritized before helpers are started. For raw flat images, the ranking primarily uses:
 
@@ -210,7 +216,7 @@ All `diskdefs` remain eligible for probing. Narrowing by geometry is used only t
 The probing client also removes duplicate format names before helper processes
 are started.
 
-## Prioritized search batches
+### Prioritized search batches
 
 Candidates are grouped by priority and tested in batches. The current
 implementation uses:
@@ -219,6 +225,29 @@ implementation uses:
 - up to **40** total prioritized candidates
 
 If a priority tier produces one or more successful mounts, lower-priority tiers are not probed further. However, all candidates from the successful tier are still checked so that aliases or near-equivalent `diskdef` entries are visible to the user.
+
+## Image metainformation details
+
+The virtual file with image details -- metainformation, named  `__CPM_DISK_INFO__.TXT`, is formed in memory and is not stored in the CP/M directory or in the disk image. It can be viewed with **F3** or copied out of the archive. Deleting it or copying it back has no effect and does not modify the image.
+
+The generated text uses an INI-like format and includes:
+
+- image/container name, physical size, logical disk size, and write support,
+- selected `diskdef`, format-selection source, and probing information,
+- sector, track, block, boot-area, offset, skew, and extent parameters,
+- CP/M variant and supported filesystem features,
+- used/free allocation blocks and directory entries,
+- logical file count, physical extent count, and user areas present,
+- CP/M Plus disk label, label password, and label timestamps,
+- CP/M Plus per-file password entries, protection modes, and decoded passwords,
+- the level of structural validation performed while mounting the image.
+
+CP/M Plus passwords are intentionally shown as plain text. They use a reversible one-byte XOR encoding and are treated as historical metadata.
+
+The name does not conform to CP/M 8.3 naming rules, so it cannot conflict with a real file stored on a supported CP/M disk.
+
+The pseudo-file can be disabled in `cpmdiskimg.ini`.
+
 
 ## Logging
 
@@ -240,8 +269,6 @@ If no format passes the isolated test, the dialog still opens and allows manual 
 - Continue cleaning up the code.
 - Improve image-type detection using additional container metadata and CP/M filesystem consistency checks.
 - Allow changing the image type after an incorrect format has been mounted "successfully".
-- Support the `[passwd]` and `[label]` names used by cpmtools.
-  - Possibly add `[metainfo]` and `[boot]` access as well.
 - Convert more LibDsk failures into plugin error codes.
 - Possibly detect the logical end of CP/M text files by searching for the `0x1A` byte.
 
@@ -249,4 +276,5 @@ If no format passes the isolated test, the dialog still opens and allows manual 
 # Credits
 
 Many thanks to the libdsk, cpmtools creators, and those who preserve the CP/M software and create corresponding disk images.
+
 
