@@ -70,11 +70,13 @@ Example configuration:
 [CPM_disk_img_plugin]
 allow_dialogs=1
 allow_txt_log=0
+enable_format_probing=1
+show_disk_info_file=1
 log_file_path=D:\Temp\cpmimg.txt
 debug_level=0
 
 image_format=osbexec1
-diskdefs_file_path=d:\totalcmd3\plugins32\wcx\cpmimg\diskdefs
+diskdefs_file_path=d:\totalcmd3\plugins\wcx\cpmimg\diskdefs
 ```
 
 - `allow_dialogs=1` — enables plugin dialogs used for image peculiarities and format selection.
@@ -222,7 +224,7 @@ Candidates are grouped by priority and tested in batches. The current
 implementation uses:
 
 - up to **7** candidates per batch
-- up to **40** total prioritized candidates
+- up to **42** total prioritized candidates
 
 If a priority tier produces one or more successful mounts, lower-priority tiers are not probed further. However, all candidates from the successful tier are still checked so that aliases or near-equivalent `diskdef` entries are visible to the user.
 

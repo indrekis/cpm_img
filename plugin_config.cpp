@@ -174,8 +174,8 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
                 decltype(show_disk_info_file)>(
                     "show_disk_info_file"s);
         }
-        catch (const std::exception&) {
-            // Keep the default: enabled.
+        catch (const std::exception&) { //-V565
+            // Keep the default: enabled. 
         }
 
 
@@ -185,7 +185,7 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
                 decltype(enable_format_probing)>(
                     "enable_format_probing"s);
         }
-        catch (const std::exception&) {
+        catch (const std::exception&) { //-V565
             // Keep the in-class default (enabled).
         }
 
