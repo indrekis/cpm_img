@@ -237,8 +237,16 @@ bool plugin_config_t::write_conf()
     fprintf(cf, "show_disk_info_file=%x\n", show_disk_info_file);
     // log_file_path.clear();
     // log_file_path.push_back("D:\\Temp\\cpmimg.txt");
-    if(log_file_path.is_empty())
-		log_file_path.push_back(config_file_path + "\\cpmimg.log"); // TODO: Fix -- use base path
+    if (log_file_path.is_empty()) {
+        log_file_path = config_file_path;
+        const auto slash_idx =
+            log_file_path.find_last(get_path_separator());
+        if (slash_idx == log_file_path.npos)
+            log_file_path.clear();
+        else
+            log_file_path.shrink_to(slash_idx + 1);
+        log_file_path.push_back("cpmimg.log");
+    }
     fprintf(cf, "log_file_path=%s\n", log_file_path.data());
     fprintf(cf, "debug_level=%x\n\n", debug_level);
     fprintf(cf, "image_format=%s\n", image_format.is_empty() ? "osbexec1" : image_format.data());
