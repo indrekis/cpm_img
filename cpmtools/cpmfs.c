@@ -1930,8 +1930,11 @@ ssize_t cpmRead(struct cpmFile *file, char *buf, size_t count)
   struct cpmSuperBlock const *sb=file->ino->sb;
   int blocksize=sb->blksiz;
   int extcap;
+  int directoryStorageBlocks;
 
   extcap=(sb->size<=256 ? 16 : 8)*blocksize;
+  directoryStorageBlocks=
+      (sb->maxdir*32+blocksize-1)/blocksize;
   if (extcap>16384) extcap=16384*sb->extents;
   if (file->ino->ino==(ino_t)sb->maxdir+1) /* [passwd] */ /*{{{*/
   {
@@ -1989,9 +1992,9 @@ ssize_t cpmRead(struct cpmFile *file, char *buf, size_t count)
                /sb->secLength;
           end=((file->pos%blocksize+(off_t)count)>blocksize ? blocksize-1 : (int)(file->pos%blocksize+count-1))
               /sb->secLength;
-          if (block<sb->dirblks)
+          if (block<directoryStorageBlocks)
           {
-            boo="Attempting to access block before beginning of data";
+            boo="Attempting to access a directory storage block";
             if (got==0) got=-1;
             break;
           }

@@ -13,7 +13,9 @@
 #include "string_tools.h"
 
 std::string trim(std::string arg) { // Note: we need copy here -- let compiler create it for us
-    constexpr auto is_space_priv = [](auto a) { return std::isspace(a); };
+    constexpr auto is_space_priv = [](unsigned char value) {
+        return std::isspace(value) != 0;
+    };
     auto last_nonspace = std::find_if_not(arg.rbegin(), arg.rend(), is_space_priv ).base(); 
     if(last_nonspace != arg.end())
         arg.erase(last_nonspace, arg.end());   

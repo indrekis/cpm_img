@@ -20,7 +20,6 @@
 #include <memory>
 #include <cassert>
 #include <optional>
-#include <clocale>
 #include <cerrno>
 #include <cctype>
 #include <cstdlib>
@@ -132,7 +131,6 @@ void plugin_config_t::set_default_diskdefs_path()
 
 bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
 {
-    std::setlocale(LC_ALL, "");
     using namespace std::literals::string_literals; 
     if (!reread) {
         config_file_path.push_back(dps->DefaultIniName);

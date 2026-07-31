@@ -40,7 +40,7 @@ inline std::string cpmimg_info_extension(const std::string& path)
     return ext;
 }
 
-inline bool cpmimg_is_disk_info_name(const char* path) noexcept
+inline bool cpmimg_is_disk_info_name(const char* path)
 {
     if (!path)
         return false;

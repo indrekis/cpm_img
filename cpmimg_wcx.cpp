@@ -37,6 +37,7 @@
 #include <exception>
 #include <stdexcept>
 #include <cstddef>
+#include <limits>
 #include <vector>
 #include <algorithm>
 #include <optional>
@@ -160,7 +161,6 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 	{
 		plugin_config.plugin_path = get_plugin_path(hModule);
 		plugin_config.set_default_diskdefs_path();
-		auto rdconf = plugin_config.read_conf(nullptr, true);
 		g_GUI_dlg_hInstance = hModule;
 	}
 		break; 
@@ -700,20 +700,20 @@ public:
 	transaction_image_guard_t& operator=(
 		const transaction_image_guard_t&) = delete;
 
-	~transaction_image_guard_t()
+	~transaction_image_guard_t() noexcept(false)
 	{
 		forget_image_format_for_archive(path_.c_str());
 		if (delete_on_destroy_ && !path_.empty())
 			(void)DeleteFileA(path_.c_str());
 	}
 
-	void release() noexcept
+	void release()
 	{
 		forget_image_format_for_archive(path_.c_str());
 		delete_on_destroy_ = false;
 	}
 
-	void preserve() noexcept
+	void preserve()
 	{
 		forget_image_format_for_archive(path_.c_str());
 		delete_on_destroy_ = false;
@@ -885,8 +885,21 @@ int load_pending_pack_file(
 		return E_EREAD;
 	}
 
-	if (file_size > static_cast<size_t>(0xffffffffu) ||
-		file_size > static_cast<size_t>(-1) - 127) {
+	constexpr size_t cpm_record_size = 128;
+	constexpr size_t cpm_record_padding =
+		cpm_record_size - 1;
+	constexpr size_t max_32_bit_file_size =
+		static_cast<size_t>(
+			(std::numeric_limits<std::uint32_t>::max)());
+	constexpr size_t max_padding_safe_file_size =
+		(std::numeric_limits<size_t>::max)() -
+		cpm_record_padding;
+	constexpr size_t max_source_file_size =
+		max_32_bit_file_size < max_padding_safe_file_size
+			? max_32_bit_file_size
+			: max_padding_safe_file_size;
+
+	if (file_size > max_source_file_size) {
 		plugin_config.log_print(
 			"\n\nError# Source file %s is too large",
 			source_path.c_str());
@@ -894,7 +907,9 @@ int load_pending_pack_file(
 	}
 
 	const auto padded_size =
-		((file_size + 127) / 128) * 128;
+		((file_size + cpm_record_padding) /
+			cpm_record_size) *
+		cpm_record_size;
 
 	try {
 		pending.cpm_name = cpm_name;
@@ -941,7 +956,8 @@ int create_empty_transaction_image(
 	cpmSuperBlock super{};
 	cpmInode root{};
 	super.dev.opened = 0;
-	constexpr bool use_uppercase = true;
+	constexpr int use_timestamps = 0;
+	constexpr int use_uppercase = 1;
 
 	if (cpmReadSuper(
 			&super,
@@ -987,7 +1003,7 @@ int create_empty_transaction_image(
 		image_format.data(),
 		"unlabeled",
 		boot_tracks.data(),
-		false,
+		use_timestamps,
 		use_uppercase);
 
 	if (create_result == -1) {
@@ -1009,6 +1025,7 @@ int verify_transaction_image(
 {
 	cpmSuperBlock super{};
 	cpmInode root{};
+	constexpr int use_uppercase = 1;
 
 	const char* open_error = Device_open(
 		&super.dev,
@@ -1028,7 +1045,7 @@ int verify_transaction_image(
 			&super,
 			&root,
 			image_format.data(),
-			true) == -1) {
+			use_uppercase) == -1) {
 		plugin_config.log_print(
 			"\n\nError# Failed mounting transaction image %s "
 			"for verification: %s",
@@ -1223,9 +1240,9 @@ void log_cpm_name_resolution_failure(
     }
 
     size_t requested_base_length = 0;
-    while (requested_base[requested_base_length] &&
-           requested_base[requested_base_length] != '.' &&
-           requested_base_length < 8) {
+    while (requested_base_length < 8 &&
+           requested_base[requested_base_length] != '\0' &&
+           requested_base[requested_base_length] != '.') {
         ++requested_base_length;
     }
 
@@ -1742,9 +1759,10 @@ extern "C" {
 			if (rres > file_size) { // Somehow ssize_t in cpmfs.h is defined as unsigned... So returned -1 is a very large number. 
                 plugin_config.log_print(
                     "\n\nError# Failed reading file %s from archive %s "
-                    "in ProcessFile/cpmRead",
+                    "in ProcessFile/cpmRead: %s",
                     dirent_raw_ptr,
-                    hArcData->archname.data());
+                    hArcData->archname.data(),
+                    boo ? boo : "unknown cpmRead error");
                 close_file(hUnpFile);
                 preserve_failed_output(dirent_raw_ptr);
                 return E_BAD_DATA;
