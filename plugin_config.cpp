@@ -21,6 +21,10 @@
 #include <cassert>
 #include <optional>
 #include <clocale>
+#include <cerrno>
+#include <cctype>
+#include <cstdlib>
+#include <limits>
 
 namespace {
     using parse_string_ret_t = std::pair<std::string, std::optional<std::string>>;
@@ -268,6 +272,78 @@ std::vector<cpm_disk_descr_t> parse_diskdefs_c(const char* filename) {
     char line[line_size];
 
     cpm_disk_descr_t superblock = {};
+
+    const auto parse_offset = [](
+        const char* text,
+        const cpm_disk_descr_t& format,
+        off_t& result) -> bool {
+        if (!text || !*text)
+            return false;
+
+        errno = 0;
+        char* end = nullptr;
+        const long long value = std::strtoll(text, &end, 10);
+        if (errno == ERANGE || end == text || value < 0)
+            return false;
+
+        unsigned long long multiplier = 1;
+        if (*end != '\0') {
+            if (end[1] != '\0')
+                return false;
+
+            switch (std::toupper(
+                static_cast<unsigned char>(*end))) {
+            case 'K':
+                multiplier = 1024;
+                break;
+            case 'M':
+                multiplier = 1024ull * 1024ull;
+                break;
+            case 'T':
+                if (format.sectrk <= 0 ||
+                    format.secLength <= 0) {
+                    return false;
+                }
+                multiplier =
+                    static_cast<unsigned long long>(
+                        format.sectrk) *
+                    static_cast<unsigned long long>(
+                        format.secLength);
+                break;
+            case 'S':
+                if (format.secLength <= 0)
+                    return false;
+                multiplier =
+                    static_cast<unsigned long long>(
+                        format.secLength);
+                break;
+            default:
+                return false;
+            }
+        }
+
+        const auto unsigned_value =
+            static_cast<unsigned long long>(value);
+        if (multiplier == 0 ||
+            unsigned_value >
+                (std::numeric_limits<
+                    unsigned long long>::max)() /
+                    multiplier) {
+            return false;
+        }
+
+        const auto byte_offset =
+            unsigned_value * multiplier;
+        if (byte_offset >
+            static_cast<unsigned long long>(
+                (std::numeric_limits<off_t>::max)())) {
+            return false;
+        }
+
+        result = static_cast<off_t>(byte_offset);
+        return true;
+    };
+
     while (fgets(line, line_size, file)) {
         // Remove newline and trim comments
         char* comment = strchr(line, '#');
@@ -302,6 +378,15 @@ std::vector<cpm_disk_descr_t> parse_diskdefs_c(const char* filename) {
         else if (strcmp(key, "dirblks") == 0)  superblock.dirblks = atoi(value);
         else if (strcmp(key, "boottrk") == 0)   superblock.boottrk = atoi(value);
         else if (strcmp(key, "bootsec") == 0)   superblock.bootsec = atoi(value);
+        else if (strcmp(key, "offset") == 0) {
+            off_t parsed_offset = 0;
+            if (parse_offset(
+                    value,
+                    superblock,
+                    parsed_offset)) {
+                superblock.offset = parsed_offset;
+            }
+        }
         else if (strcmp(key, "os") == 0) {
                   if (strcmp(value, "2.2") == 0)    superblock.type |= CPMFS_DR22;
              else if (strcmp(value, "3") == 0)      superblock.type |= CPMFS_DR3;
@@ -315,7 +400,6 @@ std::vector<cpm_disk_descr_t> parse_diskdefs_c(const char* filename) {
          }
              auto tt = errno;
              // Add reading skewtab, malloc(sizeof(int)*sectors);
-             // Add reading offset
     }
         
     fclose(file);
