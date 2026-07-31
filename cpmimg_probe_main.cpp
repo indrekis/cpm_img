@@ -78,8 +78,11 @@ std::string file_key(const PhysDirectoryEntry& entry)
 
 bool regular_entry(const cpmSuperBlock& super, unsigned int status) noexcept
 {
+    const bool supports_high_user_areas =
+        (super.type & CPMFS_HI_USER) != 0 &&
+        (super.type & CPMFS_CPM3_OTHER) == 0;
     const unsigned int user_limit =
-        super.type == CPMFS_P2DOS ? 31u : 15u;
+        supports_high_user_areas ? 31u : 15u;
     return status <= user_limit;
 }
 

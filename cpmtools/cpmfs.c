@@ -1172,9 +1172,12 @@ static int validateDirectory(struct cpmSuperBlock const *d)
   if (!d || !d->dir || d->maxdir<=0 || d->size<=0 || d->blksiz<=0)
     return directoryValidationFail(-1,"invalid superblock parameters");
 
-  /* Match fsck.cpm semantics: P2DOS permits users 0-31; ordinary CP/M 2.2,
-   * CP/M 3 and the other supported variants use file users 0-15. */
-  regularUserLimit=(d->type==CPMFS_P2DOS) ? 31u : 15u;
+  /* Status values 16-31 are regular user areas when the selected
+   * filesystem variant advertises CPMFS_HI_USER.  CP/M 3 reuses the
+   * same range for password entries, so keep its regular files at 0-15. */
+  regularUserLimit=
+    ((d->type&CPMFS_HI_USER)!=0 &&
+     (d->type&CPMFS_CPM3_OTHER)==0) ? 31u : 15u;
 
   for (entryIndex=0; entryIndex<d->maxdir; ++entryIndex)
   {

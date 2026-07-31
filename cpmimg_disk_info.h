@@ -303,8 +303,11 @@ inline std::string cpmimg_build_disk_info(
         static_cast<std::uint64_t>(
             super.offset > 0 ? super.offset : 0);
 
+    const bool supports_high_user_areas =
+        (super.type & CPMFS_HI_USER) != 0 &&
+        (super.type & CPMFS_CPM3_OTHER) == 0;
     const unsigned int regular_user_limit =
-        super.type == CPMFS_P2DOS ? 31u : 15u;
+        supports_high_user_areas ? 31u : 15u;
 
     std::size_t directory_entries_used = 0;
     std::size_t physical_extents = 0;
