@@ -154,7 +154,6 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         return false; // Wrong configuration would be overwritten by default configuration.
     }
     try {
-        allow_dialogs = get_option_from_map<decltype(allow_dialogs)>("allow_dialogs"s);
         allow_txt_log = get_option_from_map<decltype(allow_txt_log)>("allow_txt_log"s);
         debug_level = get_option_from_map<decltype(debug_level)>("debug_level"s);
         auto cfp = get_option_from_map<std::string>("diskdefs_file_path"s);
@@ -231,7 +230,6 @@ bool plugin_config_t::write_conf()
     }
     fprintf(cf, "[CPM_disk_img_plugin]\n");
 
-    fprintf(cf, "allow_dialogs=%x\n", allow_dialogs);
     fprintf(cf, "allow_txt_log=%x\n", allow_txt_log);
     fprintf(cf, "enable_format_probing=%x\n", enable_format_probing);
     fprintf(cf, "show_disk_info_file=%x\n", show_disk_info_file);

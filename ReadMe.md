@@ -68,7 +68,6 @@ Example configuration:
 
 ```ini
 [CPM_disk_img_plugin]
-allow_dialogs=1
 allow_txt_log=0
 enable_format_probing=1
 show_disk_info_file=1
@@ -79,7 +78,6 @@ image_format=osbexec1
 diskdefs_file_path=d:\totalcmd3\plugins\wcx\cpmimg\diskdefs
 ```
 
-- `allow_dialogs=1` — enables plugin dialogs used for image peculiarities and format selection.
 - `allow_txt_log=1` — enables detailed diagnostic logging. Logging can noticeably reduce performance and is intended primarily for image analysis and debugging.
   - Important diagnostic events are also sent to the debugger in debug builds (without NDEBUG defined). They can be viewed with a  full-fledged debugger or tools such as [SimpleProgramDebugger](http://www.nirsoft.net/utils/simple_program_debugger.html).
 - `log_file_path=<filename>` — selects the log file. If the file cannot be opened for writing, text logging is disabled. The file is recreated when logging is initialized for a TCmd session.
