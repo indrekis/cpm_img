@@ -1583,6 +1583,7 @@ int cpmNamei(const struct cpmInode *dir, char const *filename, struct cpmInode *
   }
   /*}}}*/
   if (highestExtno == -1) {
+      boo="file not found in CP/M directory";
       // TODO: Can here be a better fix?
       i->attr = -1;
       i->ino = dir->sb->maxdir + 2; // ???
@@ -1776,7 +1777,7 @@ int cpmReaddir(struct cpmFile *dir, struct cpmDirent *ent)
   struct PhysDirectoryEntry *cur=(struct PhysDirectoryEntry*)0;
   char buf[2+8+1+3+1]; /* 00foobarxy.zzy\0 */
   char *bufp;
-  int hasext;
+  int nameLength,extensionLength;
   /*}}}*/
 
   if (!(S_ISDIR(dir->ino->mode))) /* error: not a directory */ /*{{{*/
@@ -1853,14 +1854,25 @@ int cpmReaddir(struct cpmFile *dir, struct cpmDirent *ent)
           /* convert file name to UNIX style */ /*{{{*/
           buf[0]='0'+cur->status/10;
           buf[1]='0'+cur->status%10;
-          for (bufp=buf+2,i=0; i<8 && (cur->name[i]&0x7f)!=' '; ++i)
+          nameLength=8;
+          while (nameLength>0 &&
+                 (cur->name[nameLength-1]&0x7f)==' ') --nameLength;
+          extensionLength=3;
+          while (extensionLength>0 &&
+                 (cur->ext[extensionLength-1]&0x7f)==' ') --extensionLength;
+
+          bufp=buf+2;
+          for (i=0; i<nameLength; ++i)
           {
             *bufp++=dir->ino->sb->uppercase ? cur->name[i]&0x7f : tolower(cur->name[i]&0x7f);
           }
-          for (hasext=0,i=0; i<3 && (cur->ext[i]&0x7f)!=' '; ++i)
+          if (extensionLength>0)
           {
-            if (!hasext) { *bufp++='.'; hasext=1; }
-            *bufp++=dir->ino->sb->uppercase ? cur->ext[i]&0x7f : tolower(cur->ext[i]&0x7f);
+            *bufp++='.';
+            for (i=0; i<extensionLength; ++i)
+            {
+              *bufp++=dir->ino->sb->uppercase ? cur->ext[i]&0x7f : tolower(cur->ext[i]&0x7f);
+            }
           }
           *bufp='\0';
           /*}}}*/

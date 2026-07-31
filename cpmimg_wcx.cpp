@@ -1148,6 +1148,244 @@ bool commit_transaction_image(
 		MOVEFILE_WRITE_THROUGH) != FALSE;
 }
 
+void log_cpm_name_resolution_failure(
+    const whole_disk_t& archive,
+    const char* stage,
+    const char* requested_name,
+    int gargv_index)
+{
+    const std::string cpm_error =
+        boo ? boo : "unspecified cpmtools error";
+    const char* safe_name =
+        requested_name ? requested_name : "(null)";
+
+    plugin_config.log_print(
+        "\n\nError# cpmNamei diagnostics: stage=%s; "
+        "archive=%s; requested='%s'; requested_length=%zu; "
+        "gargv_index=%d; gargc=%d; current_file_counter=%u; "
+        "format=%s; requested_driver=%s; actual_driver=%s; "
+        "cpmtools_error=%s",
+        stage ? stage : "(unknown)",
+        archive.archname.data(),
+        safe_name,
+        strlen(safe_name),
+        gargv_index,
+        archive.gargc,
+        static_cast<unsigned int>(
+            archive.curren_file_counter),
+        archive.image_format.data(),
+        archive.driver_name.empty()
+            ? "(auto)"
+            : archive.driver_name.c_str(),
+        archive.actual_libdsk_driver_name.empty()
+            ? "(unknown)"
+            : archive.actual_libdsk_driver_name.c_str(),
+        cpm_error.c_str());
+
+    if (archive.gargv && archive.gargc > 0) {
+        const int first =
+            gargv_index > 2 ? gargv_index - 2 : 0;
+        const int last =
+            gargv_index + 2 < archive.gargc
+                ? gargv_index + 2
+                : archive.gargc - 1;
+
+        for (int i = first; i <= last; ++i) {
+            const char* value =
+                archive.gargv[i]
+                    ? archive.gargv[i]
+                    : "(null)";
+            plugin_config.log_print(
+                "\nInfo# cpmNamei gargv context: "
+                "index=%d%s; value='%s'; length=%zu",
+                i,
+                i == gargv_index ? " [selected]" : "",
+                value,
+                strlen(value));
+        }
+    }
+
+    const char* requested_base = safe_name;
+    if (requested_base[0] >= '0' &&
+        requested_base[0] <= '9' &&
+        requested_base[1] >= '0' &&
+        requested_base[1] <= '9') {
+        requested_base += 2;
+    }
+
+    size_t requested_base_length = 0;
+    while (requested_base[requested_base_length] &&
+           requested_base[requested_base_length] != '.' &&
+           requested_base_length < 8) {
+        ++requested_base_length;
+    }
+
+    bool found_candidate = false;
+    const bool supports_high_user_areas =
+        (archive.super.type & CPMFS_HI_USER) != 0 &&
+        (archive.super.type & CPMFS_CPM3_OTHER) == 0;
+    const unsigned int regular_user_limit =
+        supports_high_user_areas ? 31u : 15u;
+
+    for (int entry_index = 0;
+         entry_index < archive.super.maxdir;
+         ++entry_index) {
+        const auto& entry =
+            archive.super.dir[entry_index];
+        const unsigned int status =
+            static_cast<unsigned char>(entry.status);
+
+        if (status > regular_user_limit)
+            continue;
+
+        size_t entry_name_length = 8;
+        while (entry_name_length > 0 &&
+               ((static_cast<unsigned char>(
+                    entry.name[entry_name_length - 1]) &
+                 0x7f) == ' ')) {
+            --entry_name_length;
+        }
+
+        if (entry_name_length != requested_base_length)
+            continue;
+
+        bool same_base = true;
+        for (size_t i = 0;
+             i < requested_base_length;
+             ++i) {
+            const char catalog_char =
+                static_cast<char>(
+                    static_cast<unsigned char>(
+                        entry.name[i]) &
+                    0x7f);
+            if (catalog_char != requested_base[i]) {
+                same_base = false;
+                break;
+            }
+        }
+        if (!same_base)
+            continue;
+
+        found_candidate = true;
+
+        char catalog_name[9]{};
+        char catalog_ext[4]{};
+
+        for (size_t i = 0; i < 8; ++i) {
+            catalog_name[i] =
+                static_cast<char>(
+                    static_cast<unsigned char>(
+                        entry.name[i]) &
+                    0x7f);
+        }
+        for (size_t i = 0; i < 3; ++i) {
+            catalog_ext[i] =
+                static_cast<char>(
+                    static_cast<unsigned char>(
+                        entry.ext[i]) &
+                    0x7f);
+        }
+
+        for (int i = 7;
+             i >= 0 && catalog_name[i] == ' ';
+             --i) {
+            catalog_name[i] = '\0';
+        }
+        for (int i = 2;
+             i >= 0 && catalog_ext[i] == ' ';
+             --i) {
+            catalog_ext[i] = '\0';
+        }
+
+        const unsigned int extent_number =
+            (static_cast<unsigned char>(
+                 entry.extnol) &
+             0x1f) |
+            ((static_cast<unsigned int>(
+                  static_cast<unsigned char>(
+                      entry.extnoh)) &
+              0x3f)
+             << 5);
+
+        plugin_config.log_print(
+            "\nInfo# cpmNamei catalog candidate: "
+            "entry=%d; user=%u; name='%s'; ext='%s'; "
+            "extent=%u; lrc=%u; records=%u; "
+            "pointers="
+            "%02X %02X %02X %02X "
+            "%02X %02X %02X %02X "
+            "%02X %02X %02X %02X "
+            "%02X %02X %02X %02X",
+            entry_index,
+            status,
+            catalog_name,
+            catalog_ext,
+            extent_number,
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.lrc)),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.blkcnt)),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[0])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[1])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[2])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[3])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[4])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[5])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[6])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[7])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[8])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[9])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[10])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[11])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[12])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[13])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[14])),
+            static_cast<unsigned int>(
+                static_cast<unsigned char>(
+                    entry.pointers[15])));
+    }
+
+    if (!found_candidate) {
+        plugin_config.log_print(
+            "\nInfo# cpmNamei diagnostics: "
+            "no regular directory entry has basename '%.*s'",
+            static_cast<int>(requested_base_length),
+            requested_base);
+    }
+}
+
 } // namespace
 
 //------------------------------------------------------------
@@ -1231,7 +1469,19 @@ extern "C" {
                 continue;
             }
 
-            cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
+            const auto name_result =
+                cpmNamei(
+                    root_ino,
+                    dirent_raw_ptr,
+                    &file_ino);
+            if (name_result == -1) {
+                log_cpm_name_resolution_failure(
+                    *hArcData,
+                    "ReadHeader",
+                    dirent_raw_ptr,
+                    static_cast<int>(
+                        hArcData->curren_file_counter));
+            }
             strcpy(HeaderData->ArcName, hArcData->archname.data());
 
             if (hArcData->users_counter == 0) {
@@ -1438,11 +1688,12 @@ extern "C" {
             cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
 
         if (nres == -1) {
-            plugin_config.log_print(
-                "\n\nError# Failed resolving file %s in archive %s "
-                "in ProcessFile/cpmNamei",
+            log_cpm_name_resolution_failure(
+                *hArcData,
+                "ProcessFile",
                 dirent_raw_ptr,
-                hArcData->archname.data());
+                static_cast<int>(
+                    hArcData->curren_file_counter - 1));
             if (Operation == PK_TEST)
                 delete_file(dest);
             return E_BAD_DATA;
