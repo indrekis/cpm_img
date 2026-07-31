@@ -1428,6 +1428,9 @@ extern "C" {
 			return nullptr;
 		}
 
+		// TODO: Make cpmglob() return an explicit status, check
+		// cpmOpendir()/cpmReaddir() failures inside it, and reject
+		// partial directory results instead of relying on global boo.
 		cpmglob(0, 1, arch->star, &arch->root, &arch->gargc, &arch->gargv);
 		for (int i = 0; i < arch->gargc; ++i) {
 			if ( arch->gargv[i][0] != '.' && 
@@ -1490,6 +1493,8 @@ extern "C" {
                     dirent_raw_ptr,
                     static_cast<int>(
                         hArcData->curren_file_counter));
+                ++hArcData->curren_file_counter;
+                continue;
             }
             strcpy(HeaderData->ArcName, hArcData->archname.data());
 
