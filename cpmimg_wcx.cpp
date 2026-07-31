@@ -821,6 +821,75 @@ extern "C" {
                 strcat(dest, DestName);
         }
 
+        const auto preserve_failed_output =
+            [&](const char* archived_name) {
+                if (Operation == PK_TEST) {
+                    delete_file(dest);
+                    return;
+                }
+
+                char partial_path[MAX_PATH]{};
+
+                for (unsigned int suffix = 0;
+                     suffix < 1000;
+                     ++suffix) {
+                    const auto path_length =
+                        suffix == 0
+                            ? snprintf(
+                                partial_path,
+                                sizeof(partial_path),
+                                "%s.partial",
+                                dest)
+                            : snprintf(
+                                partial_path,
+                                sizeof(partial_path),
+                                "%s.partial.%u",
+                                dest,
+                                suffix);
+
+                    if (path_length < 0 ||
+                        static_cast<size_t>(path_length) >=
+                            sizeof(partial_path)) {
+                        plugin_config.log_print(
+                            "\n\nError# Cannot create a partial-file "
+                            "name for %s; incomplete output remains as %s",
+                            archived_name,
+                            dest);
+                        return;
+                    }
+
+                    if (MoveFileA(dest, partial_path)) {
+                        plugin_config.log_print(
+                            "\n\nWarning# Incomplete output for %s "
+                            "was preserved as %s",
+                            archived_name,
+                            partial_path);
+                        return;
+                    }
+
+                    const auto move_error = GetLastError();
+                    if (move_error != ERROR_ALREADY_EXISTS &&
+                        move_error != ERROR_FILE_EXISTS) {
+                        plugin_config.log_print(
+                            "\n\nError# Failed renaming incomplete "
+                            "output for %s from %s to %s "
+                            "(Windows error %lu); output remains "
+                            "under its original name",
+                            archived_name,
+                            dest,
+                            partial_path,
+                            static_cast<unsigned long>(move_error));
+                        return;
+                    }
+                }
+
+                plugin_config.log_print(
+                    "\n\nError# No free partial-file name found "
+                    "for %s; incomplete output remains as %s",
+                    archived_name,
+                    dest);
+            };
+
         if (hArcData->last_header_was_disk_info) {
             hUnpFile = Operation == PK_TEST
                 ? open_file_overwrite(dest)
@@ -829,10 +898,24 @@ extern "C" {
             if (hUnpFile == file_open_error_v)
                 return E_ECREATE;
 
-            write_file(
+            const auto write_result = write_file(
                 hUnpFile,
                 hArcData->disk_info_text.data(),
                 hArcData->disk_info_text.size());
+
+            if (write_result !=
+                hArcData->disk_info_text.size()) {
+                plugin_config.log_print(
+                    "\n\nError# Failed writing virtual file %s "
+                    "from archive %s in ProcessFile/write_file",
+                    CPMIMG_DISK_INFO_FILENAME,
+                    hArcData->archname.data());
+                close_file(hUnpFile);
+                preserve_failed_output(
+                    CPMIMG_DISK_INFO_FILENAME);
+                return E_EWRITE;
+            }
+
             close_file(hUnpFile);
 
             if (Operation == PK_TEST)
@@ -845,6 +928,8 @@ extern "C" {
 
         if (hArcData->curren_file_counter >
             static_cast<uint32_t>(hArcData->gargc)) {
+            if (Operation == PK_TEST)
+                delete_file(dest);
             return E_NO_MEMORY;
         }
 
@@ -856,6 +941,17 @@ extern "C" {
         const auto nres =
             cpmNamei(root_ino, dirent_raw_ptr, &file_ino);
 
+        if (nres == -1) {
+            plugin_config.log_print(
+                "\n\nError# Failed resolving file %s in archive %s "
+                "in ProcessFile/cpmNamei",
+                dirent_raw_ptr,
+                hArcData->archname.data());
+            if (Operation == PK_TEST)
+                delete_file(dest);
+            return E_BAD_DATA;
+        }
+
         hUnpFile = Operation == PK_TEST
             ? open_file_overwrite(dest)
             : open_file_write(dest);
@@ -863,18 +959,10 @@ extern "C" {
         if (hUnpFile == file_open_error_v)
             return E_ECREATE;
 
-        if (nres == -1 && file_ino.size != 0) {
-            plugin_config.log_print(
-                "\n\nError# Failed opening file %s in archive %s "
-                "in ProcessFile/cpmNamei",
-                dirent_raw_ptr,
-                hArcData->archname.data());
-            close_file(hUnpFile);
-            return E_BAD_DATA;
-        }
-
         if (file_ino.size != 0) {
-            auto buf = std::make_unique<char[]>(file_ino.size);
+            const auto file_size =
+                static_cast<size_t>(file_ino.size);
+            auto buf = std::make_unique<char[]>(file_size);
 
             if (cpmOpen(&file_ino, &file, O_RDONLY) == -1) {
                 plugin_config.log_print(
@@ -883,17 +971,60 @@ extern "C" {
                     dirent_raw_ptr,
                     hArcData->archname.data());
                 close_file(hUnpFile);
+                delete_file(dest);
                 return E_BAD_DATA;
             }
 
             const auto rres =
-                cpmRead(&file, buf.get(), file_ino.size);
-            if (rres != file_ino.size) {
+                cpmRead(&file, buf.get(), file_size);
+
+			if (rres > file_size) { // Somehow ssize_t in cpmfs.h is defined as unsigned... So returned -1 is a very large number. 
+                plugin_config.log_print(
+                    "\n\nError# Failed reading file %s from archive %s "
+                    "in ProcessFile/cpmRead",
+                    dirent_raw_ptr,
+                    hArcData->archname.data());
                 close_file(hUnpFile);
+                preserve_failed_output(dirent_raw_ptr);
                 return E_BAD_DATA;
             }
 
-            write_file(hUnpFile, buf.get(), file_ino.size);
+            const auto bytes_read =
+                static_cast<size_t>(rres);
+
+            if (bytes_read != 0) {
+                const auto write_result =
+                    write_file(
+                        hUnpFile,
+                        buf.get(),
+                        bytes_read);
+
+                if (write_result != bytes_read) {
+                    plugin_config.log_print(
+                        "\n\nError# Failed writing file %s "
+                        "from archive %s "
+                        "in ProcessFile/write_file",
+                        dirent_raw_ptr,
+                        hArcData->archname.data());
+                    close_file(hUnpFile);
+                    preserve_failed_output(
+                        dirent_raw_ptr);
+                    return E_EWRITE;
+                }
+            }
+
+            if (bytes_read != file_size) {
+                plugin_config.log_print(
+                    "\n\nError# Short read for file %s from archive %s: "
+                    "expected %zu bytes, read %zu bytes",
+                    dirent_raw_ptr,
+                    hArcData->archname.data(),
+                    file_size,
+                    bytes_read);
+                close_file(hUnpFile);
+                preserve_failed_output(dirent_raw_ptr);
+                return E_BAD_DATA;
+            }
         }
 
         if (file_ino.mtime != 0)
