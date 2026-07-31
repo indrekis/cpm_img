@@ -43,6 +43,7 @@
 #include <map>
 #include <mutex>
 #include <cassert>
+#include <utility>
 
 
 using std::nothrow, std::uint8_t;
@@ -231,6 +232,7 @@ struct whole_disk_t {
 	int openmode_m = PK_OM_LIST;
 	bool read_only = true; // Opening to read only or read-write
 	bool can_we_write_this_format = true; // If we can write this format
+	bool mounted = false;
 
 	minimal_fixed_string_t<MAX_PATH> get_arch_ext() const{
 		auto ext_pos = archname.find_last('.');
@@ -301,13 +303,24 @@ struct whole_disk_t {
 
 	uint32_t users_counter = 0;
 
+	int close_image() noexcept {
+		if (!mounted)
+			return 0;
+
+		mounted = false;
+		const auto result = cpmUmount(&super);
+		super = {};
+		root = {};
+		return result;
+	}
+
 	~whole_disk_t() {
 		if (hArchFile)
 			close_file(hArchFile);
 		if (gargv) {
 			cpmglobfree(gargv, gargc);
 		}
-		cpmUmount(&super);
+		(void)close_image();
 	}
 private: 
 
@@ -649,10 +662,493 @@ private:
         }
 
 		device_guard.release();
+		mounted = true;
 	}
 };
 //------- whole_disk_t implementation --------------------------
 using archive_HANDLE = whole_disk_t*;
+
+namespace {
+
+void forget_image_format_for_archive(const char* archive_name)
+{
+	std::lock_guard<std::mutex> lock(session_image_format_mutex);
+	session_image_formats_by_archive.erase(
+		normalized_archive_key(archive_name));
+}
+
+class transaction_image_guard_t {
+	std::string path_;
+	bool delete_on_destroy_ = true;
+
+public:
+	explicit transaction_image_guard_t(std::string path)
+		: path_(std::move(path))
+	{
+	}
+
+	transaction_image_guard_t(const transaction_image_guard_t&) = delete;
+	transaction_image_guard_t& operator=(
+		const transaction_image_guard_t&) = delete;
+
+	~transaction_image_guard_t()
+	{
+		forget_image_format_for_archive(path_.c_str());
+		if (delete_on_destroy_ && !path_.empty())
+			(void)DeleteFileA(path_.c_str());
+	}
+
+	void release() noexcept
+	{
+		forget_image_format_for_archive(path_.c_str());
+		delete_on_destroy_ = false;
+	}
+
+	void preserve() noexcept
+	{
+		forget_image_format_for_archive(path_.c_str());
+		delete_on_destroy_ = false;
+	}
+};
+
+class local_file_handle_guard_t {
+	file_handle_t handle_ = file_open_error_v;
+
+public:
+	explicit local_file_handle_guard_t(file_handle_t handle) noexcept
+		: handle_(handle)
+	{
+	}
+
+	local_file_handle_guard_t(const local_file_handle_guard_t&) = delete;
+	local_file_handle_guard_t& operator=(
+		const local_file_handle_guard_t&) = delete;
+
+	~local_file_handle_guard_t()
+	{
+		if (handle_ != file_open_error_v &&
+			handle_ != file_handle_t()) {
+			(void)close_file(handle_);
+		}
+	}
+
+	file_handle_t get() const noexcept
+	{
+		return handle_;
+	}
+};
+
+struct pending_pack_file_t {
+	std::string cpm_name;
+	std::vector<char> data;
+};
+
+std::string make_transaction_candidate(
+	const char* packed_file,
+	unsigned int attempt)
+{
+	const std::string target =
+		packed_file ? packed_file : "";
+
+	const auto separator = target.find_last_of("\\/");
+	const auto dot = target.find_last_of('.');
+	const bool has_extension =
+		dot != std::string::npos &&
+		(separator == std::string::npos || dot > separator);
+
+	const std::string directory =
+		separator == std::string::npos
+			? std::string{}
+			: target.substr(0, separator + 1);
+	const std::string extension =
+		has_extension ? target.substr(dot) : std::string{};
+
+	char temporary_name[96]{};
+	const auto name_length = snprintf(
+		temporary_name,
+		sizeof(temporary_name),
+		"~cpmimg-%08lX-%08lX-%03u%s",
+		static_cast<unsigned long>(GetCurrentProcessId()),
+		static_cast<unsigned long>(GetTickCount()),
+		attempt,
+		extension.c_str());
+
+	if (name_length < 0 ||
+		static_cast<size_t>(name_length) >=
+			sizeof(temporary_name)) {
+		return {};
+	}
+
+	std::string candidate = directory + temporary_name;
+	if (candidate.size() >= MAX_PATH)
+		return {};
+
+	return candidate;
+}
+
+int prepare_transaction_image(
+	const char* packed_file,
+	bool packed_file_exists,
+	std::string& transaction_path)
+{
+	DWORD last_error = ERROR_SUCCESS;
+
+	for (unsigned int attempt = 0; attempt < 1000; ++attempt) {
+		auto candidate =
+			make_transaction_candidate(packed_file, attempt);
+		if (candidate.empty()) {
+			plugin_config.log_print(
+				"\n\nError# Cannot create a transaction-image "
+				"path for %s",
+				packed_file);
+			return E_ECREATE;
+		}
+
+		if (packed_file_exists) {
+			if (CopyFileA(
+					packed_file,
+					candidate.c_str(),
+					TRUE)) {
+				transaction_path = std::move(candidate);
+				return 0;
+			}
+		}
+		else {
+			const auto handle = CreateFileA(
+				candidate.c_str(),
+				GENERIC_READ | GENERIC_WRITE,
+				FILE_SHARE_READ,
+				nullptr,
+				CREATE_NEW,
+				FILE_ATTRIBUTE_NORMAL,
+				nullptr);
+
+			if (handle != INVALID_HANDLE_VALUE) {
+				(void)CloseHandle(handle);
+				transaction_path = std::move(candidate);
+				return 0;
+			}
+		}
+
+		last_error = GetLastError();
+		if (last_error == ERROR_FILE_EXISTS ||
+			last_error == ERROR_ALREADY_EXISTS) {
+			continue;
+		}
+
+		plugin_config.log_print(
+			"\n\nError# Failed preparing transaction image "
+			"for %s (Windows error %lu)",
+			packed_file,
+			static_cast<unsigned long>(last_error));
+		return E_ECREATE;
+	}
+
+	plugin_config.log_print(
+		"\n\nError# Failed finding a free transaction-image "
+		"name for %s (last Windows error %lu)",
+		packed_file,
+		static_cast<unsigned long>(last_error));
+	return E_ECREATE;
+}
+
+int load_pending_pack_file(
+	const std::string& source_path,
+	const std::string& cpm_name,
+	pending_pack_file_t& pending)
+{
+	const auto raw_handle =
+		open_file_shared_read(source_path.c_str());
+	if (raw_handle == file_open_error_v) {
+		plugin_config.log_print(
+			"\n\nError# Failed opening source file %s",
+			source_path.c_str());
+		return E_EOPEN;
+	}
+
+	local_file_handle_guard_t source_handle{raw_handle};
+	const auto file_size = get_file_size(source_handle.get());
+
+	if (file_size == static_cast<size_t>(-1)) {
+		plugin_config.log_print(
+			"\n\nError# Failed obtaining size of source file %s",
+			source_path.c_str());
+		return E_EREAD;
+	}
+
+	if (file_size > static_cast<size_t>(0xffffffffu) ||
+		file_size > static_cast<size_t>(-1) - 127) {
+		plugin_config.log_print(
+			"\n\nError# Source file %s is too large",
+			source_path.c_str());
+		return E_BAD_DATA;
+	}
+
+	const auto padded_size =
+		((file_size + 127) / 128) * 128;
+
+	try {
+		pending.cpm_name = cpm_name;
+		pending.data.assign(
+			padded_size,
+			static_cast<char>(0x1a));
+	}
+	catch (const std::bad_alloc&) {
+		return E_NO_MEMORY;
+	}
+
+	if (file_size != 0) {
+		const auto read_size = read_file(
+			source_handle.get(),
+			pending.data.data(),
+			file_size);
+
+		if (read_size != file_size) {
+			plugin_config.log_print(
+				"\n\nError# Failed reading source file %s: "
+				"expected %zu bytes, read %zu bytes",
+				source_path.c_str(),
+				file_size,
+				read_size);
+			return E_EREAD;
+		}
+	}
+
+	return 0;
+}
+
+int create_empty_transaction_image(
+	const std::string& transaction_path,
+	const minimal_fixed_string_t<33>& image_format)
+{
+	if (image_format.is_empty()) {
+		plugin_config.log_print(
+			"\n\nError# Cannot create image %s: "
+			"no CP/M format is selected",
+			transaction_path.c_str());
+		return E_UNKNOWN_FORMAT;
+	}
+
+	cpmSuperBlock super{};
+	cpmInode root{};
+	super.dev.opened = 0;
+	constexpr bool use_uppercase = true;
+
+	if (cpmReadSuper(
+			&super,
+			&root,
+			image_format.data(),
+			use_uppercase) == -1) {
+		plugin_config.log_print(
+			"\n\nError# Failed preparing format %s for "
+			"new image %s: %s",
+			image_format.data(),
+			transaction_path.c_str(),
+			boo ? boo : "unknown error");
+		cpmDiscardSuper(&super);
+		return E_BAD_DATA;
+	}
+
+	const auto boot_track_size_64 =
+		static_cast<std::uint64_t>(super.boottrk) *
+		static_cast<std::uint64_t>(super.secLength) *
+		static_cast<std::uint64_t>(super.sectrk);
+
+	if (boot_track_size_64 >
+		static_cast<std::uint64_t>(
+			static_cast<size_t>(-1))) {
+		cpmDiscardSuper(&super);
+		return E_NO_MEMORY;
+	}
+
+	std::vector<char> boot_tracks;
+	try {
+		boot_tracks.assign(
+			static_cast<size_t>(boot_track_size_64),
+			static_cast<char>(0xe5));
+	}
+	catch (const std::bad_alloc&) {
+		cpmDiscardSuper(&super);
+		return E_NO_MEMORY;
+	}
+
+	const auto create_result = mkfs(
+		&super,
+		transaction_path.c_str(),
+		image_format.data(),
+		"unlabeled",
+		boot_tracks.data(),
+		false,
+		use_uppercase);
+
+	if (create_result == -1) {
+		plugin_config.log_print(
+			"\n\nError# Failed creating transaction image %s "
+			"with error: %s",
+			transaction_path.c_str(),
+			boo ? boo : "unknown error");
+	}
+
+	cpmDiscardSuper(&super);
+	return create_result == -1 ? E_ECREATE : 0;
+}
+
+int verify_transaction_image(
+	const std::string& transaction_path,
+	const minimal_fixed_string_t<33>& image_format,
+	const std::vector<pending_pack_file_t>& pending_files)
+{
+	cpmSuperBlock super{};
+	cpmInode root{};
+
+	const char* open_error = Device_open(
+		&super.dev,
+		transaction_path.c_str(),
+		O_RDONLY,
+		nullptr);
+	if (open_error) {
+		plugin_config.log_print(
+			"\n\nError# Failed opening transaction image %s "
+			"for verification: %s",
+			transaction_path.c_str(),
+			open_error);
+		return E_EOPEN;
+	}
+
+	if (cpmReadSuper(
+			&super,
+			&root,
+			image_format.data(),
+			true) == -1) {
+		plugin_config.log_print(
+			"\n\nError# Failed mounting transaction image %s "
+			"for verification: %s",
+			transaction_path.c_str(),
+			boo ? boo : "unknown error");
+		cpmDiscardSuper(&super);
+		return E_BAD_DATA;
+	}
+
+	int result = 0;
+
+	for (const auto& pending : pending_files) {
+		cpmInode inode{};
+		if (cpmNamei(
+				&root,
+				pending.cpm_name.c_str(),
+				&inode) == -1) {
+			plugin_config.log_print(
+				"\n\nError# Verification failed: file %s "
+				"is absent from transaction image %s",
+				pending.cpm_name.c_str(),
+				transaction_path.c_str());
+			result = E_BAD_DATA;
+			break;
+		}
+
+		if (static_cast<size_t>(inode.size) !=
+			pending.data.size()) {
+			plugin_config.log_print(
+				"\n\nError# Verification failed for %s in %s: "
+				"expected size %zu, image reports %lld",
+				pending.cpm_name.c_str(),
+				transaction_path.c_str(),
+				pending.data.size(),
+				static_cast<long long>(inode.size));
+			result = E_BAD_DATA;
+			break;
+		}
+
+		cpmFile file{};
+		if (cpmOpen(&inode, &file, O_RDONLY) == -1) {
+			plugin_config.log_print(
+				"\n\nError# Verification failed opening %s "
+				"in transaction image %s: %s",
+				pending.cpm_name.c_str(),
+				transaction_path.c_str(),
+				boo ? boo : "unknown error");
+			result = E_BAD_DATA;
+			break;
+		}
+
+		std::vector<char> read_back;
+		try {
+			read_back.resize(pending.data.size());
+		}
+		catch (const std::bad_alloc&) {
+			result = E_NO_MEMORY;
+			(void)cpmClose(&file);
+			break;
+		}
+
+		if (!read_back.empty()) {
+			const auto read_size = cpmRead(
+				&file,
+				read_back.data(),
+				read_back.size());
+
+			if (read_size != read_back.size() ||
+				!std::equal(
+					read_back.begin(),
+					read_back.end(),
+					pending.data.begin())) {
+				plugin_config.log_print(
+					"\n\nError# Verification failed: data "
+					"mismatch for %s in transaction image %s",
+					pending.cpm_name.c_str(),
+					transaction_path.c_str());
+				result = E_BAD_DATA;
+			}
+		}
+
+		if (cpmClose(&file) != 0 && result == 0) {
+			plugin_config.log_print(
+				"\n\nError# Verification failed closing %s "
+				"in transaction image %s: %s",
+				pending.cpm_name.c_str(),
+				transaction_path.c_str(),
+				boo ? boo : "unknown error");
+			result = E_ECLOSE;
+		}
+
+		if (result != 0)
+			break;
+	}
+
+	if (cpmUmount(&super) == -1 && result == 0) {
+		plugin_config.log_print(
+			"\n\nError# Failed closing transaction image %s "
+			"after verification: %s",
+			transaction_path.c_str(),
+			boo ? boo : "unknown error");
+		result = E_ECLOSE;
+	}
+
+	return result;
+}
+
+bool commit_transaction_image(
+	const char* packed_file,
+	const std::string& transaction_path,
+	bool packed_file_exists)
+{
+	if (packed_file_exists) {
+		return ReplaceFileA(
+			packed_file,
+			transaction_path.c_str(),
+			nullptr,
+			0,
+			nullptr,
+			nullptr) != FALSE;
+	}
+
+	return MoveFileExA(
+		transaction_path.c_str(),
+		packed_file,
+		MOVEFILE_WRITE_THROUGH) != FALSE;
+}
+
+} // namespace
 
 //------------------------------------------------------------
 //-----------------------=[ DLL exports ]=--------------------
@@ -1156,6 +1652,7 @@ extern "C" {
 		return 0;
 	}
 
+#if 0
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
 		const auto image_format = effective_image_format_for_archive(PackedFile);
 		// PK_PACK_MOVE_FILES         1 Delete original after packing
@@ -1316,6 +1813,289 @@ extern "C" {
 		}
 		return 0;
 	}
+
+#endif
+
+	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
+
+		(void)Flags;
+
+		const auto image_format =
+			effective_image_format_for_archive(PackedFile);
+		// PK_PACK_MOVE_FILES         1 Delete original after packing
+		// PK_PACK_SAVE_PATHS         2 Save path names of files
+		// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
+
+		std::string SubPathS{SubPath ? SubPath : ""};
+		if (!SubPathS.empty() && SubPathS.size() != 2) {
+			plugin_config.log_print(
+				"\n\nError# Impossible in-image path: %s "
+				"for %s archive in PackFiles",
+				SubPath,
+				PackedFile);
+			return E_EOPEN;
+		}
+
+		std::string SrcPathS{SrcPath ? SrcPath : ""};
+		std::vector<pending_pack_file_t> pending_files;
+
+		const char* cur_ptr = AddList;
+		while (true) {
+			const auto list_entry_size = strlen(cur_ptr);
+			if (list_entry_size == 0)
+				break;
+
+			std::string cpm_name{cur_ptr};
+			if (cpmimg_is_disk_info_name(cpm_name.c_str())) {
+				plugin_config.log_print(
+					"\nInfo# Ignoring virtual file %s",
+					cur_ptr);
+				cur_ptr += list_entry_size + 1;
+				continue;
+			}
+
+			const auto user_pos = cpm_name.find('\\');
+			if (user_pos == cpm_name.size() - 1) {
+				cur_ptr += list_entry_size + 1;
+				continue;
+			}
+
+			if (user_pos == 2 && SubPathS.empty()) {
+				cpm_name.erase(2, 1);
+			}
+			else if (user_pos == std::string::npos) {
+				cpm_name =
+					SubPathS.empty()
+						? "00" + cpm_name
+						: SubPathS + cpm_name;
+			}
+			else {
+				plugin_config.log_print(
+					"\n\nError# Wrong file name %s for "
+					"archive %s in PackFiles",
+					cur_ptr,
+					PackedFile);
+				return E_BAD_DATA;
+			}
+
+			const auto duplicate = std::find_if(
+				pending_files.begin(),
+				pending_files.end(),
+				[&](const pending_pack_file_t& pending) {
+					return _stricmp(
+						pending.cpm_name.c_str(),
+						cpm_name.c_str()) == 0;
+				});
+			if (duplicate != pending_files.end()) {
+				plugin_config.log_print(
+					"\n\nError# More than one source file maps "
+					"to CP/M name %s in PackFiles",
+					cpm_name.c_str());
+				return E_BAD_DATA;
+			}
+
+			pending_pack_file_t pending;
+			const auto source_path = SrcPathS + cur_ptr;
+			const auto load_result = load_pending_pack_file(
+				source_path,
+				cpm_name,
+				pending);
+			if (load_result != 0)
+				return load_result;
+
+			pending_files.push_back(std::move(pending));
+			cur_ptr += list_entry_size + 1;
+		}
+
+		const bool packed_file_exists =
+			access(PackedFile, F_OK) == 0;
+
+		if (pending_files.empty() && packed_file_exists)
+			return 0;
+
+		std::string transaction_path;
+		const auto prepare_result = prepare_transaction_image(
+			PackedFile,
+			packed_file_exists,
+			transaction_path);
+		if (prepare_result != 0)
+			return prepare_result;
+
+		transaction_image_guard_t transaction_guard{
+			transaction_path
+		};
+		remember_image_format_for_archive(
+			transaction_path.c_str(),
+			image_format);
+
+		if (!packed_file_exists) {
+			const auto create_result =
+				create_empty_transaction_image(
+					transaction_path,
+					image_format);
+			if (create_result != 0)
+				return create_result;
+		}
+
+		std::unique_ptr<whole_disk_t> loc_arch;
+		try {
+			loc_arch = std::make_unique<whole_disk_t>(
+				transaction_path.c_str(),
+				0,
+				PK_OM_LIST,
+				false);
+		}
+		catch (disk_err_t& err) {
+			plugin_config.log_print(
+				"\n\nError# Failed opening transaction image "
+				"%s in PackFiles with code %i",
+				transaction_path.c_str(),
+				err.get_err_code());
+			return err.get_err_code();
+		}
+		catch (std::bad_alloc&) {
+			return E_NO_MEMORY;
+		}
+
+		if (!loc_arch->can_we_write_this_format)
+			return E_NOT_SUPPORTED;
+
+		for (const auto& pending : pending_files) {
+			cpmInode previous_inode{};
+			const bool replacing_existing =
+				cpmNamei(
+					&loc_arch->root,
+					pending.cpm_name.c_str(),
+					&previous_inode) != -1;
+			const auto previous_attributes =
+				replacing_existing
+					? previous_inode.attr
+					: cpm_attr_t{};
+
+			if (replacing_existing &&
+				cpmUnlink(
+					&loc_arch->root,
+					pending.cpm_name.c_str()) == -1) {
+				plugin_config.log_print(
+					"\n\nError# Failed removing old file %s "
+					"from transaction image %s: %s",
+					pending.cpm_name.c_str(),
+					transaction_path.c_str(),
+					boo ? boo : "unknown error");
+				return E_EWRITE;
+			}
+
+			cpmInode inode{};
+			if (cpmCreat(
+					&loc_arch->root,
+					pending.cpm_name.c_str(),
+					&inode,
+					0666) == -1) {
+				plugin_config.log_print(
+					"\n\nError# Failed creating file %s in "
+					"transaction image %s: %s",
+					pending.cpm_name.c_str(),
+					transaction_path.c_str(),
+					boo ? boo : "unknown error");
+				return E_EWRITE;
+			}
+
+			cpmFile file{};
+			if (cpmOpen(&inode, &file, O_WRONLY) == -1) {
+				plugin_config.log_print(
+					"\n\nError# Failed opening file %s for "
+					"writing in transaction image %s: %s",
+					pending.cpm_name.c_str(),
+					transaction_path.c_str(),
+					boo ? boo : "unknown error");
+				return E_EOPEN;
+			}
+
+			if (!pending.data.empty()) {
+				const auto written_size = cpmWrite(
+					&file,
+					pending.data.data(),
+					pending.data.size());
+
+				if (written_size != pending.data.size()) {
+					(void)cpmClose(&file);
+					plugin_config.log_print(
+						"\n\nError# Incomplete write of %s "
+						"to transaction image %s: expected "
+						"%zu bytes, wrote %zu bytes",
+						pending.cpm_name.c_str(),
+						transaction_path.c_str(),
+						pending.data.size(),
+						static_cast<size_t>(written_size));
+					return E_EWRITE;
+				}
+			}
+
+			if (cpmClose(&file) != 0) {
+				plugin_config.log_print(
+					"\n\nError# Failed closing file %s in "
+					"transaction image %s: %s",
+					pending.cpm_name.c_str(),
+					transaction_path.c_str(),
+					boo ? boo : "unknown error");
+				return E_ECLOSE;
+			}
+
+			if (replacing_existing &&
+				cpmAttrSet(
+					&inode,
+					previous_attributes) == -1) {
+				plugin_config.log_print(
+					"\n\nError# Failed restoring attributes "
+					"of %s in transaction image %s: %s",
+					pending.cpm_name.c_str(),
+					transaction_path.c_str(),
+					boo ? boo : "unknown error");
+				return E_EWRITE;
+			}
+		}
+
+		const auto close_result = loc_arch->close_image();
+		loc_arch.reset();
+		if (close_result == -1) {
+			plugin_config.log_print(
+				"\n\nError# Failed synchronizing or closing "
+				"transaction image %s: %s",
+				transaction_path.c_str(),
+				boo ? boo : "unknown error");
+			return E_EWRITE;
+		}
+
+		const auto verify_result = verify_transaction_image(
+			transaction_path,
+			image_format,
+			pending_files);
+		if (verify_result != 0)
+			return verify_result;
+
+		if (!commit_transaction_image(
+				PackedFile,
+				transaction_path,
+				packed_file_exists)) {
+			const auto replace_error = GetLastError();
+			transaction_guard.preserve();
+			plugin_config.log_print(
+				"\n\nError# Transaction image %s was valid, "
+				"but replacing %s failed (Windows error %lu). "
+				"The transaction image was preserved.",
+				transaction_path.c_str(),
+				PackedFile,
+				static_cast<unsigned long>(replace_error));
+			return E_EWRITE;
+		}
+
+		transaction_guard.release();
+		remember_image_format_for_archive(
+			PackedFile,
+			image_format);
+		return 0;
+	}
+
 
 	DLLEXPORT void STDCALL ConfigurePacker(
 	    HWND Parent,

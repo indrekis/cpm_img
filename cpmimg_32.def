@@ -7,4 +7,7 @@ EXPORTS
 	SetProcessDataProc
 	PackSetDefaultParams
 	CanYouHandleThisFile
+	DeleteFiles
+	PackFiles
+	ConfigurePacker
 	GetPackerCaps
