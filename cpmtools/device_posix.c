@@ -24,6 +24,17 @@ const char *Device_open(struct Device *this, const char *filename, int mode, con
   return ((this->fd==-1)?strerror(errno):(const char*)0);
 }
 /*}}}*/
+/* Device_selectRawDriver -- Honour a diskdef's flat-file track order */ /*{{{*/
+const char *Device_selectRawDriver(struct Device *this, const char *driverName)
+{
+  /* As with libdsk, no image is open while a new one is being prepared. */
+  if (this->opened && driverName && driverName[0])
+  {
+    return "libdsk:driver needs a build compiled with libdsk";
+  }
+  return NULL;
+}
+/*}}}*/
 /* Device_setGeometry    -- Set disk geometry                       */ /*{{{*/
 const char *Device_setGeometry(struct Device *this, int secLength, int sectrk, int tracks, off_t offset, const char *libdskGeometry)
 {

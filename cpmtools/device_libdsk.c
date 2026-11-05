@@ -36,6 +36,9 @@ const char *Device_open(struct Device *this, const char *filename, int mode, con
   const char *boo;
   dsk_err_t e;
 
+  this->filename = NULL;
+  this->autodetected = (deviceOpts == NULL);
+
   /* Assume driver name & format name both fit in 80 characters, rather than
    * malloccing the exact size */
   if (deviceOpts == NULL) 
@@ -58,6 +61,14 @@ const char *Device_open(struct Device *this, const char *filename, int mode, con
   this->opened = 0;
   if (e) return dsk_strerror(e);
   this->opened = 1;
+  this->filename = malloc(strlen(filename) + 1);
+  if (this->filename == NULL)
+  {
+    dsk_close(&this->dev);
+    this->opened = 0;
+    return "out of memory";
+  }
+  memcpy(this->filename, filename, strlen(filename) + 1);
   if (format) 
   {
     boo = lookupFormat(&this->geom, format);
@@ -67,6 +78,52 @@ const char *Device_open(struct Device *this, const char *filename, int mode, con
   {
     dsk_getgeom(this->dev, &this->geom); 
   }
+  return NULL;
+}
+/*}}}*/
+/* Device_selectRawDriver -- Honour a diskdef's flat-file track order */ /*{{{*/
+const char *Device_selectRawDriver(struct Device *this, const char *driverName)
+{
+  dsk_err_t e;
+  char *known;
+  int i;
+
+  if (!driverName || !driverName[0]) return NULL;
+
+  /* Check the name even when it will not be used, so that a typo in diskdefs
+   * shows up on every image and not only on the flat ones. */
+  for (i = 0; dsk_type_enum(i, &known) == DSK_ERR_OK; ++i)
+  {
+    if (known && strcmp(known, driverName) == 0) break;
+  }
+  if (dsk_type_enum(i, &known) != DSK_ERR_OK) return dsk_strerror(DSK_ERR_NODRVR);
+
+  /* The plugin also parses diskdefs with no image open, to create a new one. */
+  if (!this->opened) return NULL;
+
+  /* A driver the caller asked for explicitly wins over the diskdef. */
+  if (!this->autodetected) return NULL;
+
+  /* Only a flat file can have the wrong track order. A container addresses
+   * sectors by cylinder and head, so it is already right, and forcing a raw
+   * driver on it would read its header as disk data. */
+  if (strcmp(dsk_drvname(this->dev), "raw") != 0) return NULL;
+
+  /* Nothing has been read or written through this handle yet, because the
+   * diskdef has to be parsed first, so there is no state to carry over. */
+  e = dsk_close(&this->dev);
+  if (e == DSK_ERR_OK) e = dsk_open(&this->dev, this->filename, driverName, NULL);
+  if (e)
+  {
+    this->opened = 0;
+    free(this->filename);
+    this->filename = NULL;
+    return dsk_strerror(e);
+  }
+
+  /* Not dsk_getgeom: its boot-sector probe can report a false-positive
+   * sidedness, and the diskdef's logical order is what applies here. */
+  dg_stdformat(&this->geom, FMT_180K, NULL, NULL);
   return NULL;
 }
 /*}}}*/
@@ -125,6 +182,8 @@ const char *Device_close(struct Device *this)
 {
   dsk_err_t e;
   this->opened=0;
+  free(this->filename);
+  this->filename = NULL;
   e = dsk_close(&this->dev);
   return (e?dsk_strerror(e):(const char*)0);
 }

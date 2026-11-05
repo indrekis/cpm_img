@@ -1473,4 +1473,35 @@ diskdef kpiv
   os 2.2
 end
 
+# Eureka A4, 3.5" DD. The machine uses cylinder 0 head 0, cylinder 0 head 1,
+# cylinder 1 head 0 and so on, with a software interleave of three.
+#
+# Eureka-A4: an image as SAMdisk writes it, with all of head 0 before all of
+# head 1. "sides" cannot express this, because it maps logical tracks to
+# cylinders and not cylinders to file offsets, so LibDsk's raw driver for that
+# file order is selected instead.
+diskdef Eureka-A4
+  seclen 512
+  tracks 160
+  sectrk 10
+  blocksize 2048
+  maxdir 256
+  skewtab 1,4,7,0,3,6,9,2,5,8
+  boottrk 0
+  os 2.2
+  libdsk:driver rawoo
+end
+
+# Eureka-A4-linear: an image with the tracks in the order the machine uses them.
+diskdef Eureka-A4-linear
+  seclen 512
+  tracks 160
+  sectrk 10
+  blocksize 2048
+  maxdir 256
+  skewtab 1,4,7,0,3,6,9,2,5,8
+  boottrk 0
+  os 2.2
+end
+
 

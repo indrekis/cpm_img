@@ -133,6 +133,7 @@ struct cpmSuperBlock
   int extents; /* logical extents per physical extent */
   int *skewtab;
   char libdskGeometry[256];
+  char libdskDriver[64];
 
   struct PhysDirectoryEntry *dir;
   int alvSize;

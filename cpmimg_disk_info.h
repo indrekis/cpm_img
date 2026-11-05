@@ -457,6 +457,8 @@ inline std::string cpmimg_build_disk_info(
         << "allocation_blocks = " << super.size << "\r\n"
         << "libdsk_geometry = "
         << cpmimg_info_safe_text(super.libdskGeometry) << "\r\n"
+        << "libdsk_driver_from_format = "
+        << cpmimg_info_safe_text(super.libdskDriver) << "\r\n"
         << "skew_table = ";
 
     if (super.skewtab && super.sectrk > 0) {

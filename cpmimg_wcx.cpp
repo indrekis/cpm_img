@@ -670,6 +670,13 @@ private:
             }
         }
 
+		// The format may have switched a raw image to another LibDsk driver,
+		// and the disk information file must report the one actually in use.
+		if (const char* value = dsk_drvname(super.dev.dev))
+			actual_libdsk_driver_name = value;
+		if (const char* value = dsk_drvdesc(super.dev.dev))
+			actual_libdsk_driver_description = value;
+
 		device_guard.release();
 		mounted = true;
 	}
@@ -1959,8 +1966,13 @@ extern "C" {
 			// file doesn't exist
 			super.dev.opened = 0;
 			bool use_uppercase = true;
-			cpmReadSuper(&super, &root, image_format.data(),
-				use_uppercase);
+			if (cpmReadSuper(&super, &root, image_format.data(),
+				use_uppercase) == -1) {
+				plugin_config.log_print("\n\nError# Failed preparing format %s for new image %s: %s",
+					image_format.data(), PackedFile, boo ? boo : "unknown error");
+				cpmDiscardSuper(&super);
+				return E_UNKNOWN_FORMAT;
+			}
 			size_t bootTrackSize = super.boottrk * super.secLength * super.sectrk;
 			char* bootTracks = new char[bootTrackSize];
 			// if ((bootTracks = malloc[bootTrackSize]) == (void*)0)

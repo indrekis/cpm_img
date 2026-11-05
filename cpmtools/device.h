@@ -19,6 +19,8 @@ struct Device
 #ifdef HAVE_LIBDSK_H
   DSK_PDRIVER   dev;
   DSK_GEOMETRY geom; 
+  char *filename; /* Device_selectRawDriver has to reopen the image */
+  int autodetected; /* no driver was requested when the image was opened */
 #endif
 #ifdef HAVE_WINDOWS_H
   int drvtype;
@@ -28,6 +30,7 @@ struct Device
 };
 
 const char *Device_open(struct Device *self, const char *filename, int mode, const char *deviceOpts);
+const char *Device_selectRawDriver(struct Device *self, const char *driverName);
 const char *Device_setGeometry(struct Device *self, int secLength, int sectrk, int tracks, off_t offset, const char *libdskGeometry);
 const char *Device_close(struct Device *self);
 const char *Device_readSector(const struct Device *self, int track, int sector, char *buf);

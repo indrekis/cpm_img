@@ -723,6 +723,7 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
   int insideDef=0,found=0;
 
   d->libdskGeometry[0] = '\0';
+  d->libdskDriver[0] = '\0';
   d->type=0;
   if ( // (fp=fopen("diskdefs","r"))==(FILE*)0 && 
       (fp=fopen(diskdefs_path,"r"))==(FILE*)0
@@ -899,6 +900,18 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
           strncpy(d->libdskGeometry, argv[1], sizeof(d->libdskGeometry) - 1);
           d->libdskGeometry[sizeof(d->libdskGeometry) - 1] = 0;
         }
+        else if (strcmp(argv[0], "libdsk:driver")==0)
+        {
+          /* argv[1] is the rest of the line, so aligned values start with blanks. */
+          /* A trailing comment leaves spaces behind, unlike a driver name. */
+          size_t len;
+
+          argv[1] += strspn(argv[1]," \t");
+          len = strcspn(argv[1]," \t\r");
+          if (len >= sizeof(d->libdskDriver)) len = sizeof(d->libdskDriver) - 1;
+          memcpy(d->libdskDriver, argv[1], len);
+          d->libdskDriver[len] = 0;
+        }
       }
       else if (argc>0 && argv[0][0]!='#' && argv[0][0]!=';')
       {
@@ -919,6 +932,7 @@ static int diskdefReadSuper(struct cpmSuperBlock *d, char const *format)
       d->blksiz=d->boottrk=d->bootsec=d->secLength=d->sectrk=d->tracks=d->maxdir=-1;
       d->dirblks=0;
       d->libdskGeometry[0] = 0;
+      d->libdskDriver[0] = 0;
       if (strcmp(argv[1],format)==0) found=1;
     }
     ++ln;
@@ -1034,6 +1048,7 @@ static int amsReadSuper(struct cpmSuperBlock *d, char const *format)
   d->extents   = ((d->size>256 ? 8 : 16)*d->blksiz)/16384;
   d->libdskGeometry[0] = 0; /* LibDsk can recognise an Amstrad superblock 
                              * and autodect */
+  d->libdskDriver[0] = 0;
  
   return 0;
 }
@@ -1243,6 +1258,17 @@ int cpmReadSuper(struct cpmSuperBlock *d, struct cpmInode *root, char const *for
     /* optional field, compute based on directory size */
     d->dirblks=(d->maxdir*32+(d->blksiz-1))/d->blksiz;
   }
+
+  /* The offset is added to the logical sector number, which equals a file
+   * offset only in the alternate-sides order. */
+  if (d->libdskDriver[0] && d->offset)
+  {
+    boo = "offset cannot be combined with libdsk:driver";
+    return -1;
+  }
+
+  boo = Device_selectRawDriver(&d->dev,d->libdskDriver);
+  if (boo) return -1;
 
   boo = Device_setGeometry(&d->dev,d->secLength,d->sectrk,d->tracks,d->offset,d->libdskGeometry);
   if (boo) return -1;
@@ -2291,6 +2317,18 @@ int mkfs(struct cpmSuperBlock* drive, const char* name, const char* format, cons
     unsigned int trkbytes;
     /*}}}*/
 
+    /* refuse what the flat write below cannot place */ /*{{{*/
+    /* The tracks are written in file order, which is the logical order only
+     * for the alternate-sides raw driver. Beyond track 0 that matters for boot
+     * tracks and for timestamp entries; an empty directory is all 0xE5 and
+     * lands right anyway. */
+    if (drive->libdskDriver[0] && (drive->boottrk > 0 ||
+        (timeStamps && (drive->type == CPMFS_P2DOS || drive->type == CPMFS_DR3))))
+    {
+        boo = "libdsk:driver does not support boot tracks or timestamps in mkfs";
+        return -1;
+    }
+    /*}}}*/
     /* open image file */ /*{{{*/
     if ((fd = open(name, O_BINARY | O_CREAT | O_WRONLY, 0666)) < 0)
     {
@@ -2312,6 +2350,10 @@ int mkfs(struct cpmSuperBlock* drive, const char* name, const char* format, cons
     memset(buf, 0xe5, 128);
     bytes = drive->maxdir * 32;
     if (bytes % trkbytes) bytes = ((bytes + trkbytes) / trkbytes) * trkbytes;
+    /* A diskdef's driver can place the directory's later tracks far along the
+     * file, and LibDsk cannot read past the end of a raw file, so fill the
+     * whole disk. The check above leaves no timestamp entries to misplace. */
+    if (drive->libdskDriver[0]) bytes = trkbytes * (drive->tracks - drive->boottrk);
     if (timeStamps && (drive->type == CPMFS_P2DOS || drive->type == CPMFS_DR3)) buf[3 * 32] = 0x21;
     memcpy(firstbuf, buf, 128);
     if (drive->type == CPMFS_DR3)
@@ -2376,7 +2418,12 @@ int mkfs(struct cpmSuperBlock* drive, const char* name, const char* format, cons
             // TODO: Fix error handling
             return -1;
         }
-        cpmReadSuper(&super, &root, format, uppercase);
+        if (cpmReadSuper(&super, &root, format, uppercase) == -1)
+        {
+            /* root is not set up, and the device may already be closed. */
+            cpmDiscardSuper(&super);
+            return -1;
+        }
 
         records = root.sb->maxdir / 8;
         if (!(ds = malloc(records * 128)))

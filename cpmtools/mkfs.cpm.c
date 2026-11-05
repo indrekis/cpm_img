@@ -64,7 +64,11 @@ int main(int argc, char *argv[]) /*{{{*/
     exit(1);
   }
   drive.dev.opened=0;
-  cpmReadSuper(&drive,&root,format,uppercase);
+  if (cpmReadSuper(&drive,&root,format,uppercase)==-1)
+  {
+    fprintf(stderr,"%s: can not use format %s: %s\n",cmd,format,boo);
+    exit(1);
+  }
   bootTrackSize=drive.boottrk*drive.secLength*drive.sectrk;
   if ((bootTracks=malloc(bootTrackSize))==(void*)0)
   {

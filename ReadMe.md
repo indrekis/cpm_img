@@ -7,6 +7,7 @@
 - [Images for tests](#images-for-tests)
 - [Problems and limitations](#problems-and-limitations)
 - [Plugin behavior details](#plugin-behavior-details)
+  - [Track order of raw images](#track-order-of-raw-images)
   - [Notes on automatic format probing](#notes-on-automatic-format-probing)
     - [How probing selects and ranks candidates](#how-probing-selects-and-ranks-candidates)
     - [Prioritized search batches](#prioritized-search-batches)
@@ -182,6 +183,32 @@ The plugin is tested on several hundred floppy images.
 
 
 # Plugin behavior details 
+
+## Track order of raw images
+
+A flat image file can store the tracks of a double-sided disk in an order that differs from the order CP/M uses them. The `sides` setting of a LibDsk geometry cannot describe this, because it maps logical tracks to cylinders and heads, while the file order belongs to the LibDsk raw driver: `raw` (alternate sides), `rawoo` (out and out) or `rawob` (out and back).
+
+A `diskdefs` entry can therefore name the driver:
+
+```
+diskdef Eureka-A4
+  ...
+  libdsk:driver rawoo
+end
+```
+
+- The driver is used only if LibDsk autodetected a plain raw file. Container formats such as IMD address sectors by cylinder and head, so they keep their own driver, and a driver requested explicitly when opening the image is kept too.
+- An unknown driver name makes the format fail to mount on every image, and the error is logged.
+- `offset` cannot be combined with `libdsk:driver`, because the offset is added to the logical sector number, which equals a file offset only in the alternate-sides order.
+- `__CPM_DISK_INFO__.TXT` shows the driver in `libdsk_driver_actual` and `libdsk_driver_from_format`.
+- A new image for such a format is created at full size, because the directory may lie far into the file. Creating one is refused when the format has boot tracks or when timestamps are requested, because those are written in file order.
+
+The Eureka A4 has two entries, because its images exist in both orders:
+
+- `Eureka-A4` is for images as SAMdisk writes them, with all of head 0 before all of head 1.
+- `Eureka-A4-linear` is for images with the tracks in the order the machine uses them.
+
+Probing can list `scp800` with the same score, since it also mounts these images. `Eureka-A4` is listed first, but `scp800` reads the files incorrectly. On an image with few directory entries, `Eureka-A4` and `Eureka-A4-linear` can both mount, and the wrong one shows corrupted file contents.
 
 ## Notes on automatic format probing
 
