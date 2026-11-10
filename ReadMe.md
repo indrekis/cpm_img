@@ -80,12 +80,32 @@ diskdefs_file_path=d:\totalcmd3\plugins\wcx\cpmimg\diskdefs
 
 - `allow_txt_log=1` — enables detailed diagnostic logging. Logging can noticeably reduce performance and is intended primarily for image analysis and debugging.
   - Important diagnostic events are also sent to the debugger in debug builds (without NDEBUG defined). They can be viewed with a  full-fledged debugger or tools such as [SimpleProgramDebugger](http://www.nirsoft.net/utils/simple_program_debugger.html).
-- `log_file_path=<filename>` — selects the log file. If the file cannot be opened for writing, text logging is disabled. The file is recreated when logging is initialized for a TCmd session.
+- `log_file_path=<filename>` — selects the log file. Environment variables are expanded, and a relative path is relative to the folder containing `cpmdiskimg.ini` (see [Portable installations](#portable-installations)). If the file cannot be opened for writing, text logging is disabled until it can: the plugin tries again each time an image is opened, and `allow_txt_log=1` is kept in the configuration file. A changed or corrected path takes effect the next time an image is opened, without restarting TCmd. The file is recreated when logging is initialized for a TCmd session.
 - `debug_level` — currently reserved; values above the supported range make the configuration invalid.
-- `image_format` — the default format name from the selected `diskdefs` file. It is copied into each archive when that archive is opened.
-- `diskdefs_file_path` — path to the `cpmtools`-compatible `diskdefs` file used both for mounting images and for populating the format-selection dialog.
+- `image_format` — the default format name from the selected `diskdefs` file. It is copied into each archive when that archive is opened. Without this line, `osbexec1` is used; a name longer than 32 characters is ignored, with a warning.
+- `diskdefs_file_path` — path to the `cpmtools`-compatible `diskdefs` file used both for mounting images and for populating the format-selection dialog. Environment variables are expanded, and a relative path is relative to the folder containing the plugin (see [Portable installations](#portable-installations)).
 - `enable_format_probing` -- use `0` to disable automatic probing, `1` to enable. Manual **Probe now** remains available.
 - `show_disk_info_file` -- 0 to disable creation of the `__CPM_DISK_INFO__.TXT` virtual file with metainformation, 1 -- enable it.
+
+## Portable installations
+
+`log_file_path` and `diskdefs_file_path` can avoid machine-specific paths by using environment variables, including `%COMMANDER_PATH%`, which TCmd sets to its own folder, or relative paths:
+
+```ini
+log_file_path=%COMMANDER_PATH%\cpmimg.log
+diskdefs_file_path=%COMMANDER_PATH%\plugins\wcx\cpmimg\diskdefs
+```
+
+The plugin keeps these values exactly as written when it saves `cpmdiskimg.ini`. A newly created configuration file uses the relative values `cpmimg.log` and `diskdefs`, and existing absolute paths are left unchanged.
+
+An undefined variable stays in the path as literal text, so the file will not be found. The plugin checks these paths whenever an image is opened, created, or changed, and shows a warning naming the setting, the path it resolved to and, where known, the reason:
+
+- If the `diskdefs` file cannot be opened, no image can be mounted, so the operation stops after the warning.
+- If the log file cannot be opened, the operation continues without logging.
+
+Each warning is shown once per TCmd session, so that opening or searching many images does not repeat it for every image. It is shown again only when the problem changes, or when it comes back after having been fixed.
+
+The details are also written to the debug output in debug builds and to the log file when logging is working.
 
 ## Image format selection dialog
 

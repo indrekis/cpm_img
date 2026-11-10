@@ -23,6 +23,7 @@
 #include <cerrno>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 
 namespace {
@@ -47,6 +48,43 @@ namespace {
         auto left_part = arg.substr(0, sep_pos);
         auto right_part = arg.substr(sep_pos + 1, std::string::npos);
         return parse_string_ret_t{ trim(left_part), trim(right_part) };
+    }
+
+    std::optional<std::string> expand_env_vars(const std::string& text) {
+#ifdef _WIN32
+        // Sized by the API rather than MAX_PATH: a long result must reach the
+        // caller's length check instead of being truncated into a wrong path.
+        const DWORD needed = ExpandEnvironmentStringsA(text.c_str(), nullptr, 0);
+        if (needed == 0)
+            return std::nullopt;
+        // The ANSI version needs one byte more than it reports (documented).
+        const DWORD size = needed + 1;
+        std::string result(size, '\0');
+        const DWORD written = ExpandEnvironmentStringsA(
+            text.c_str(), result.data(), size);
+        if (written == 0 || written > size)
+            return std::nullopt;
+        // The ANSI API may report more than it wrote, so measure the text.
+        result.resize(std::strlen(result.c_str()));
+        return result;
+#else
+        return text;
+#endif
+    }
+
+    // Windows leaves an undefined %NAME% in place without reporting an error.
+    bool has_unexpanded_variable(const std::string& text) {
+        const auto first = text.find('%');
+        if (first == std::string::npos)
+            return false;
+        const auto second = text.find('%', first + 1);
+        return second != std::string::npos && second > first + 1;
+    }
+
+    bool is_absolute_path(const std::string& path) {
+        return !path.empty() &&
+            (path[0] == '\\' || path[0] == '/' ||
+                (path.size() >= 2 && path[1] == ':'));
     }
 
 }
@@ -98,35 +136,148 @@ T plugin_config_t::get_option_from_map(const std::string& option_name) const {
 
 void plugin_config_t::set_default_diskdefs_path()
 {
-    if (diskdefs_file_path.is_empty()) {
-        diskdefs_file_path.push_back(plugin_path);
-        if (!diskdefs_file_path.is_empty() &&
-            diskdefs_file_path[diskdefs_file_path.size() - 1] !=
-                get_path_separator()) {
-            diskdefs_file_path.push_back(get_path_separator());
-        }
-        diskdefs_file_path.push_back("diskdefs");
-        return;
+    diskdefs_path_problem.clear();
+    resolve_configured_path(
+        "diskdefs_file_path",
+        diskdefs_file_setting,
+        plugin_path.data(),
+        diskdefs_file_path,
+        diskdefs_path_problem);
+    // cpmtools reads this global; set it wherever the path is resolved, as a
+    // read_conf() that fails early would otherwise leave it NULL, and
+    // fopen(NULL) crashes TCmd.
+    diskdefs_path = diskdefs_file_path.data();
+}
+
+// Also kept in `problem`, because the log may be off or be the broken part,
+// and describe_path_problems() needs the reason for the user.
+void plugin_config_t::report_config_problem(
+    const std::string& message, std::string& problem)
+{
+    debug_print("Warning# {}", message);
+    log_print("Warning# %s", message.c_str());
+    if (!problem.empty())
+        problem += "\n";
+    problem += message;
+}
+
+std::string plugin_config_t::describe_path_problems(bool* cannot_mount) const
+{
+    std::string text;
+
+    // Checked once, so the text and the caller's decision cannot disagree.
+    std::FILE* diskdefs = diskdefs_file_path.is_empty()
+        ? nullptr
+        : std::fopen(diskdefs_file_path.data(), "r");
+    if (diskdefs)
+        std::fclose(diskdefs);
+    if (cannot_mount)
+        *cannot_mount = diskdefs == nullptr;
+
+    if (!diskdefs) {
+        text += "The disk definitions file cannot be opened, so disk images "
+            "cannot be mounted.\n";
+        text += "diskdefs_file_path=" + diskdefs_file_setting + "\n";
+        text += "Resolved path: ";
+        text += diskdefs_file_path.is_empty() ? "(none)" : diskdefs_file_path.data();
+        text += "\n";
+        if (!diskdefs_path_problem.empty())
+            text += diskdefs_path_problem + "\n";
     }
 
-    const bool is_absolute =
-        diskdefs_file_path[0] == '\\' ||
-        diskdefs_file_path[0] == '/' ||
-        (diskdefs_file_path.size() >= 2 &&
-            diskdefs_file_path[1] == ':');
-    if (is_absolute) {
-        return;
+    if (!log_path_problem.empty()) {
+        if (!text.empty())
+            text += "\n";
+        text += "Logging is off because the log file cannot be opened.\n";
+        text += "log_file_path=" + log_file_setting + "\n";
+        text += log_path_problem + "\n";
     }
 
-    const auto relative_path = diskdefs_file_path;
-    diskdefs_file_path.clear();
-    diskdefs_file_path.push_back(plugin_path);
-    if (!diskdefs_file_path.is_empty() &&
-        diskdefs_file_path[diskdefs_file_path.size() - 1] !=
-            get_path_separator()) {
-        diskdefs_file_path.push_back(get_path_separator());
+    if (!image_format_problem.empty()) {
+        if (!text.empty())
+            text += "\n";
+        text += "The image_format setting was ignored.\n";
+        text += image_format_problem + "\n";
+        text += "The format ";
+        text += image_format.data();
+        text += " is used instead.\n";
     }
-    diskdefs_file_path.push_back(relative_path);
+
+    if (!text.empty()) {
+        text += "\nPlease check these settings in ";
+        text += config_file_path.data();
+        text += ".";
+    }
+    return text;
+}
+
+// On failure `resolved` is left empty, so the file simply fails to open
+// instead of a truncated path pointing at some other file.
+bool plugin_config_t::resolve_configured_path(
+    const char* option_name,
+    const std::string& setting,
+    const char* base_dir,
+    minimal_fixed_string_t<MAX_PATH>& resolved,
+    std::string& problem)
+{
+    resolved.clear();
+
+    const auto expanded = expand_env_vars(setting);
+    if (!expanded) {
+        report_config_problem(std::string{ option_name } +
+            ": cannot expand environment variables in: " + setting, problem);
+        return false;
+    }
+    if (has_unexpanded_variable(*expanded)) {
+        report_config_problem(std::string{ option_name } +
+            ": possibly undefined environment variable in: " + *expanded, problem);
+    }
+
+    std::string full_path;
+    if (!is_absolute_path(*expanded)) {
+        full_path = base_dir;
+        if (!full_path.empty() && full_path.back() != get_path_separator())
+            full_path.push_back(get_path_separator());
+    }
+    full_path += *expanded;
+
+    if (full_path.size() > resolved.capacity()) {
+        report_config_problem(std::string{ option_name } +
+            ": path is too long: " + full_path, problem);
+        return false;
+    }
+    resolved.push_back(full_path.c_str());
+    return true;
+}
+
+void plugin_config_t::open_log_file()
+{
+    log_open_attempted = true;
+    opened_log_setting = log_file_setting;
+
+    log_path_problem.clear();
+    const bool resolved = resolve_configured_path(
+        "log_file_path",
+        log_file_setting,
+        config_dir.data(),
+        log_file_path,
+        log_path_problem);
+    if (resolved)
+        log_file = open_file_overwrite(log_file_path.data());
+    log_open_failed = !resolved || log_file == file_open_error_v;
+    if (log_open_failed) {
+        allow_txt_log = false;
+        report_config_problem(
+            std::string{ "log_file_path: cannot open the log file: " } +
+                (resolved ? log_file_path.data() : log_file_setting.c_str()),
+            log_path_problem);
+    }
+    else {
+        // A "possibly undefined variable" note is only a guess (a file name
+        // may contain '%'); once the file opened, it must not claim that
+        // logging is off.
+        log_path_problem.clear();
+    }
 }
 
 bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
@@ -138,6 +289,7 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         if (slash_idx == config_file_path.npos)
             slash_idx = 0;
         config_file_path.shrink_to(slash_idx);
+        config_dir = config_file_path;
         config_file_path.push_back(inifilename);
 
         plugin_interface_version_hi = dps->PluginInterfaceVersionHi;
@@ -150,6 +302,9 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         return false; // Use default configuration
     }
 
+    // A failed earlier read can leave options behind; they would then count
+    // as duplicates and make every later read fail.
+    options_map = options_map_t{};
     auto res = file_to_options_map(cf);
     if (res) {
         std::fclose(cf);
@@ -158,16 +313,59 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
     try {
         allow_txt_log = get_option_from_map<decltype(allow_txt_log)>("allow_txt_log"s);
         debug_level = get_option_from_map<decltype(debug_level)>("debug_level"s);
-        auto cfp = get_option_from_map<std::string>("diskdefs_file_path"s);
-        diskdefs_file_path.clear();
-		diskdefs_file_path.push_back(cfp.data());
+
+        // Read even with logging off, or the next save would lose this value.
+        try {
+            log_file_setting = get_option_from_map<std::string>("log_file_path"s);
+        }
+        catch (const std::exception&) { //-V565
+            // Keep the current value, initially the default.
+        }
+
+        // A failed open is retried on each reread, and a changed path is
+        // reopened, so that editing the INI takes effect without restarting
+        // TCmd; otherwise a working log is opened only once.
+        if (log_open_attempted &&
+            (log_open_failed || log_file_setting != opened_log_setting)) {
+            if (!log_open_failed && log_file != file_handle_t())
+                close_file(log_file);
+            log_file = file_handle_t();
+            log_open_attempted = false;
+        }
+        if (!allow_txt_log) {
+            log_path_problem.clear();
+            log_open_failed = false;
+        }
+
+        // Before the other paths, so that their problems reach the log.
+        if (allow_txt_log && !log_open_attempted) {
+            open_log_file();
+        }
+
+        diskdefs_file_setting = get_option_from_map<std::string>("diskdefs_file_path"s);
 		set_default_diskdefs_path();
 
-		diskdefs_path = diskdefs_file_path.data(); 
-
-        image_format.clear();
-        auto tf = get_option_from_map<std::string>("image_format"s);
-        image_format.push_back( tf.c_str() );
+        // Optional like the options below: a missing line keeps the current
+        // format instead of invalidating the whole INI, and an over-long name
+        // is reported and ignored instead of overflowing the fixed buffer.
+        image_format_problem.clear();
+        try {
+            auto tf = get_option_from_map<std::string>("image_format"s);
+            if (tf.size() > image_format.capacity()) {
+                report_config_problem(
+                    "image_format: longer than " +
+                        std::to_string(image_format.capacity()) +
+                        " characters, ignored: " + tf,
+                    image_format_problem);
+            }
+            else {
+                image_format.clear();
+                image_format.push_back(tf.c_str());
+            }
+        }
+        catch (const std::exception&) { //-V565
+            // Keep the current format.
+        }
 
         // Optional in older configuration files.
         try {
@@ -188,18 +386,6 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         }
         catch (const std::exception&) { //-V565
             // Keep the in-class default (enabled).
-        }
-
-
-        if (allow_txt_log && log_file_path.is_empty()) {
-            auto tstr = get_option_from_map<std::string>("log_file_path"s);
-            log_file_path.clear();
-            log_file_path.push_back(tstr.data());
-
-            log_file = open_file_overwrite(log_file_path.data());
-            if (log_file == file_open_error_v) {
-                allow_txt_log = false;
-            }
         }
     }
     catch (std::exception& ex) {
@@ -232,27 +418,18 @@ bool plugin_config_t::write_conf()
     }
     fprintf(cf, "[CPM_disk_img_plugin]\n");
 
-    fprintf(cf, "allow_txt_log=%x\n", allow_txt_log);
+    // A log that failed to open is off for this session only; saving must
+    // keep the user's choice, or one bad path would disable logging for good.
+    fprintf(cf, "allow_txt_log=%x\n", allow_txt_log || log_open_failed);
     fprintf(cf, "enable_format_probing=%x\n", enable_format_probing);
     fprintf(cf, "show_disk_info_file=%x\n", show_disk_info_file);
     // log_file_path.clear();
     // log_file_path.push_back("D:\\Temp\\cpmimg.txt");
-    if (log_file_path.is_empty()) {
-        log_file_path = config_file_path;
-        const auto slash_idx =
-            log_file_path.find_last(get_path_separator());
-        if (slash_idx == log_file_path.npos)
-            log_file_path.clear();
-        else
-            log_file_path.shrink_to(slash_idx + 1);
-        log_file_path.push_back("cpmimg.log");
-    }
-    fprintf(cf, "log_file_path=%s\n", log_file_path.data());
+    fprintf(cf, "log_file_path=%s\n", log_file_setting.c_str());
     fprintf(cf, "debug_level=%x\n\n", debug_level);
     fprintf(cf, "image_format=%s\n", image_format.is_empty() ? "osbexec1" : image_format.data());
-    set_default_diskdefs_path();
     // fprintf(cf, "diskdefs_file_path=%s\n", (diskdefs_file_path+"\\diskdefs").data());
-    fprintf(cf, "diskdefs_file_path=%s\n", diskdefs_file_path.data());
+    fprintf(cf, "diskdefs_file_path=%s\n", diskdefs_file_setting.c_str());
 
     std::fclose(cf);
     return true;

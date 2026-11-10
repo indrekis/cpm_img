@@ -456,6 +456,12 @@ private:
 		// attempt must start from a fully discarded superblock and a newly
 		// opened LibDsk device.
 		auto mount_with_format = [&](const char* format) -> int {
+			// cpmReadSuper() dereferences the name, so a missing format would
+			// crash TCmd; treat it as a failed mount and let the user choose.
+			if (!format || !*format) {
+				boo = "no image format configured";
+				return -1;
+			}
 			cpmDiscardSuper(&super);
 			root = {};
 
@@ -1412,6 +1418,31 @@ void log_cpm_name_resolution_failure(
     }
 }
 
+// Without this, a mistyped or unresolvable path fails silently in release
+// builds with logging off. Returns true when images cannot be mounted at all;
+// the caller then stops, as continuing would only offer an empty format list.
+// Each problem is shown once per session, and again only after it changes or
+// comes back: TCmd may call in here for every image of a batch (searching
+// inside many images), and one box per image would be read aloud each time.
+// Not called from CanYouHandleThisFile, which runs while TCmd tests files by
+// content, where a message box would be unexpected.
+bool warn_about_path_problems()
+{
+    static std::string last_shown;
+    bool cannot_mount = false;
+    const auto problems = plugin_config.describe_path_problems(&cannot_mount);
+    if (problems.empty()) {
+        last_shown.clear();
+        return false;
+    }
+    if (problems != last_shown) {
+        last_shown = problems;
+        MessageBoxA(GetActiveWindow(), problems.c_str(),
+            "CP/M disk image plugin", MB_OK | MB_ICONWARNING);
+    }
+    return cannot_mount;
+}
+
 } // namespace
 
 //------------------------------------------------------------
@@ -1423,6 +1454,10 @@ extern "C" {
 	{
 		auto rdconf = plugin_config.read_conf(nullptr, true); // Reread confuguration
 		plugin_config.log_print("\n\nInfo# Opening file: %s", ArchiveData->ArcName);
+		if (warn_about_path_problems()) {
+			ArchiveData->OpenResult = E_EABORTED;
+			return nullptr;
+		}
 
 		std::unique_ptr<whole_disk_t> arch; // TCmd API expects HANDLE/raw pointer,
 										// so smart pointer is used to manage cleanup on errors 
@@ -1878,6 +1913,12 @@ extern "C" {
 	}
 
 	DLLEXPORT int STDCALL DeleteFiles(char* PackedFile, char* DeleteList) {
+		// TCmd calls this directly, without OpenArchive, so reread and check
+		// the paths here too.
+		plugin_config.read_conf(nullptr, true);
+		if (warn_about_path_problems())
+			return E_EABORTED;
+
 		// Caching results here would complicate code too much as for now
 		std::unique_ptr<whole_disk_t> loc_arch;
 
@@ -2102,6 +2143,12 @@ extern "C" {
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
 
 		(void)Flags;
+
+		// TCmd calls this directly, without OpenArchive, both to create a new
+		// image and to add files, so reread and check the paths here too.
+		plugin_config.read_conf(nullptr, true);
+		if (warn_about_path_problems())
+			return E_EABORTED;
 
 		const auto image_format =
 			effective_image_format_for_archive(PackedFile);
